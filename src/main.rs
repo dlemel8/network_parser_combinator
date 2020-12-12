@@ -1,51 +1,16 @@
-#[derive(Debug)]
-struct ParserResult<'a, T> {
-    parsed: T,
-    remaining: &'a [u8],
-}
+use parser::Parser;
+use tls::TlsRecordParser;
 
-trait Parser<T> {
-    fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, u8>, String>;
-}
-
+mod parser;
+mod tls;
 
 fn main() {
-    // let result = ByteParser { b: b'$' }.parse(b"$hello").unwrap();
-    // assert_eq!(b'$', result.parsed);
-    // assert_eq!(b"hello", result.remaining);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::error::Error;
-
-    #[derive(Debug)]
-    struct ByteParser {
-        b: u8,
+    let mut payload: &[u8] = b"160303005d020000590303f76c185dff55f3931308b0d7f18d078e141ecd894b26efe15aabd5e0e7e45b3320c981b4588aacae50737272444755352b79c5bfba4fd95331691e5fd36cebb61dcca9000011ff01000100000b0004030001020017000016030301be0b0001ba0001b70001b4308201b030820135a003020102020900d2c6d38588184854300a06082a8648ce3d04030230143112301006035504030c096c6f63616c686f7374301e170d3137303630323138333332385a170d3137303730323138333332385a30143112301006035504030c096c6f63616c686f73743076301006072a8648ce3d020106052b810400220362000418a4f5fe8fcca085378c7a37f1f349ab3dc19a3af6d539511df16db58875f4f0cf76cd43dd4ff235ec21d12c5f2f208d5ddc60c716d585e49a50b72a89d4cc61c9fa1156c2e217315c5f4396968ede55ec83f0ada7bedd3e57c947dc2114e6d1a3533051301d0603551d0e041604143fd86cb82d9cb88873e1699f35a0af07c450ff8e301f0603551d230418301680143fd86cb82d9cb88873e1699f35a0af07c450ff8e300f0603551d130101ff040530030101ff300a06082a8648ce3d0403020369003066023100bcf4b27ad10e5f3bbfcf0e06e08e7b6d85250cafd32eff0ace9ab8bce30d9db8c76818849daa3a311924db4872cc937c023100a354d9ba25e978b7544914fe453f813bcea7ab5cfd5edb58b8b2e6cb24c91334bfd3ba85abe294bb8f7d7e950da6e12016030300920c00008e03001d205e2b666dd7125255cf5e0ff859d8f97e5f86fd6a0f16a8575c15a9f461617f4f040300663064023059632b3ebf0dd42ced5527df9e0b918052c8c1cb6d5f5fbfa536ce64b08c1f46022fb55d7865bce13405c381555f80960230667286ab5dca3b5b96bf3c78e15bc4ab628faff45d6dd2df5e7ed2df793e9a1438f49225ab3ea058f594826b27f2723716030300040e000000";
+    let mut records = vec![];
+    let parser = TlsRecordParser {};
+    while let Ok(result) = parser.parse(payload) {
+        records.push(result.parsed);
+        payload = result.remaining;
     }
-
-    impl Parser<u8> for ByteParser {
-        fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, u8>, String> {
-            if input.len() == 0 || input[0] != self.b {
-                return Err(format!("expected {}, got {:?}", self.b, input));
-            }
-            Ok(ParserResult { parsed: self.b, remaining: &input[1..] })
-        }
-    }
-
-    #[test]
-    fn parser_success() -> Result<(), Box<dyn Error>> {
-        let result = ByteParser { b: b'$' }.parse(b"$hello")?;
-        assert_eq!(b'$', result.parsed);
-        assert_eq!(b"hello", result.remaining);
-        Ok(())
-    }
-
-    #[test]
-    fn parser_failure() -> Result<(), Box<dyn Error>> {
-        let result = ByteParser { b: b'h' }.parse(b"$hello");
-        assert!(result.is_err());
-        Ok(())
-    }
+    println!("{:?}", records);
 }
