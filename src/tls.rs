@@ -38,13 +38,9 @@ impl Parser<String> for TlsVersionParser {
             return Err(format!("not enough data {}", input.len()));
         }
 
-        // let (major, minor) = input[0], input[1];
-        let major = input[0];
-        let minor = input[1];
-
-        let version = match (major, minor) {
-            (3, x) if 1 < x && x < 4 => format!("1.{}", x - 1),
-            _ => return Err(format!("unknown version {}:{}", input[0], minor)),
+        let version = match (input[0], input[1]) {
+            (3, y) if 1 < y && y < 4 => format!("1.{}", y - 1),
+            (x, y) => return Err(format!("unknown version {}:{}", x, y)),
         };
 
         Ok(ParserResult { parsed: version, remaining: &input[2..] })
