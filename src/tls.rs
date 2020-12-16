@@ -39,14 +39,13 @@ impl Parser<String> for TlsVersionParser {
         }
 
         let version = match (input[0], input[1]) {
-            (3, y) if 1 < y && y < 4 => format!("1.{}", y - 1),
+            (3, y@ 1..=4) => format!("1.{}", y - 1),
             (x, y) => return Err(format!("unknown version {}:{}", x, y)),
         };
 
         Ok(ParserResult { parsed: version, remaining: &input[2..] })
     }
 }
-
 
 #[derive(Debug)]
 pub struct TlsRecord {
@@ -58,6 +57,7 @@ pub struct TlsRecordParser {}
 
 impl Parser<TlsRecord> for TlsRecordParser {
     fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, TlsRecord>, String> {
+        // TlsContentTypeParser{}.parse(input).and_then(TlsVersionParser{}.parse(input))
         unimplemented!()
     }
 }
