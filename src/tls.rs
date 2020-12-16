@@ -43,18 +43,21 @@ fn tls_version_parser<'a>() -> impl Parser<'a, String> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TlsRecord {
     pub content_type: TlsContentType,
     pub version: String,
 }
 
-pub struct TlsRecordParser {}
-
-impl <'a> Parser<'a, TlsRecord> for TlsRecordParser {
-    fn parse(&self, input: &'a [u8]) -> Result<ParserResult<'a, TlsRecord>, String> {
-        // TlsContentTypeParser{}.parse(input).and_then(TlsVersionParser{}.parse(input))
-        unimplemented!()
+pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord> {
+    let p1 = tls_content_type_parser();
+    let p2 = tls_version_parser();
+    move |input: &'a [u8]| {
+        p1.parse(input).and_then(|ParserResult { parsed: content_type, remaining: remaining1 }| {
+            p2.parse(remaining1).map(|ParserResult { parsed: version, remaining: remaining2 }| {
+                ParserResult { parsed: TlsRecord { content_type, version }, remaining: remaining2 }
+            })
+        })
     }
 }
 
@@ -63,7 +66,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{TlsContentType, tls_content_type_parser, tls_version_parser};
+    use crate::tls::{tls_content_type_parser, tls_version_parser, TlsContentType, tls_record_parser, TlsRecord};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -111,6 +114,35 @@ mod tests {
         let result = tls_version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn record_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 2] = [23, 3];
+        let result = tls_record_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn record_parser_on_invalid_input_return_err() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [23, 3, 100];
+        let result = tls_record_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn record_parser_on_valid_input_return_err() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 5] = [23, 3, 2, 14, 2];
+        let result = tls_record_parser().parse(&input)?;
+        let expected = TlsRecord {
+            content_type: TlsContentType::ApplicationData,
+            version: "1.1".to_string()
+        };
+        assert_eq!(expected, result.parsed);
+        assert_eq!([14, 2], result.remaining);
         Ok(())
     }
 }
