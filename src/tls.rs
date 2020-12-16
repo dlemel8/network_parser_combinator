@@ -9,10 +9,8 @@ pub enum TlsContentType {
     Heartbeat,
 }
 
-pub struct TlsContentTypeParser {}
-
-impl Parser<TlsContentType> for TlsContentTypeParser {
-    fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, TlsContentType>, String> {
+fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
+    move |input: &'a [u8]| {
         if input.is_empty() {
             return Err("nothing to parse".to_string());
         }
@@ -30,16 +28,14 @@ impl Parser<TlsContentType> for TlsContentTypeParser {
     }
 }
 
-pub struct TlsVersionParser {}
-
-impl Parser<String> for TlsVersionParser {
-    fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, String>, String> {
+fn tls_version_parser<'a>() -> impl Parser<'a, String> {
+    move |input: &'a [u8]| {
         if input.len() < 2 {
             return Err(format!("not enough data {}", input.len()));
         }
 
         let version = match (input[0], input[1]) {
-            (3, y@ 1..=4) => format!("1.{}", y - 1),
+            (3, y @ 1..=4) => format!("1.{}", y - 1),
             (x, y) => return Err(format!("unknown version {}:{}", x, y)),
         };
 
@@ -55,8 +51,8 @@ pub struct TlsRecord {
 
 pub struct TlsRecordParser {}
 
-impl Parser<TlsRecord> for TlsRecordParser {
-    fn parse<'a>(&self, input: &'a [u8]) -> Result<ParserResult<'a, TlsRecord>, String> {
+impl <'a> Parser<'a, TlsRecord> for TlsRecordParser {
+    fn parse(&self, input: &'a [u8]) -> Result<ParserResult<'a, TlsRecord>, String> {
         // TlsContentTypeParser{}.parse(input).and_then(TlsVersionParser{}.parse(input))
         unimplemented!()
     }
@@ -67,11 +63,11 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{TlsContentType, TlsContentTypeParser, TlsVersionParser};
+    use crate::tls::{TlsContentType, tls_content_type_parser, tls_version_parser};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = TlsContentTypeParser {}.parse(b"");
+        let result = tls_content_type_parser().parse(b"");
         assert!(result.is_err());
         Ok(())
     }
@@ -79,7 +75,7 @@ mod tests {
     #[test]
     fn content_type_parser_on_input_with_unknown_value_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 3];
-        let result = TlsContentTypeParser {}.parse(&input);
+        let result = tls_content_type_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -87,7 +83,7 @@ mod tests {
     #[test]
     fn content_type_parser_on_input_with_known_value_return_content_type() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [22, 2, 3];
-        let result = TlsContentTypeParser {}.parse(&input)?;
+        let result = tls_content_type_parser().parse(&input)?;
         assert_eq!(TlsContentType::Handshake, result.parsed);
         assert_eq!([2, 3], result.remaining);
         Ok(())
@@ -96,7 +92,7 @@ mod tests {
     #[test]
     fn version_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 1] = [1];
-        let result = TlsVersionParser {}.parse(&input);
+        let result = tls_version_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -104,7 +100,7 @@ mod tests {
     #[test]
     fn version_parser_on_input_with_unknown_value_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 7];
-        let result = TlsVersionParser {}.parse(&input);
+        let result = tls_version_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -112,7 +108,7 @@ mod tests {
     #[test]
     fn version_parser_on_input_with_known_value_return_it() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [3, 3, 7];
-        let result = TlsVersionParser {}.parse(&input)?;
+        let result = tls_version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
         Ok(())
