@@ -1,4 +1,4 @@
-use crate::parser::{Parser, ParserResult};
+use crate::parser::{and, Parser, ParserResult};
 
 #[derive(Debug, PartialEq)]
 pub enum TlsContentType {
@@ -50,13 +50,11 @@ pub struct TlsRecord {
 }
 
 pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord> {
-    let p1 = tls_content_type_parser();
-    let p2 = tls_version_parser();
     move |input: &'a [u8]| {
-        p1.parse(input).and_then(|ParserResult { parsed: content_type, remaining: remaining1 }| {
-            p2.parse(remaining1).map(|ParserResult { parsed: version, remaining: remaining2 }| {
-                ParserResult { parsed: TlsRecord { content_type, version }, remaining: remaining2 }
-            })
+        let p1 = tls_content_type_parser();
+        let p2 = tls_version_parser();
+        and(p1, p2).parse(&input).map(|ParserResult { parsed: (content_type, version), remaining }| {
+            ParserResult { parsed: TlsRecord { content_type, version }, remaining }
         })
     }
 }
@@ -66,7 +64,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_version_parser, TlsContentType, tls_record_parser, TlsRecord};
+    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsRecord};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -139,7 +137,7 @@ mod tests {
         let result = tls_record_parser().parse(&input)?;
         let expected = TlsRecord {
             content_type: TlsContentType::ApplicationData,
-            version: "1.1".to_string()
+            version: "1.1".to_string(),
         };
         assert_eq!(expected, result.parsed);
         assert_eq!([14, 2], result.remaining);
