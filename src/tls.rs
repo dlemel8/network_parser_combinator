@@ -1,5 +1,5 @@
 use crate::network::size_header_parser;
-use crate::parser::{and, Parser, ParserResult};
+use crate::parser::{Parser, ParserResult};
 
 #[derive(Debug, PartialEq)]
 pub enum TlsContentType {
@@ -52,14 +52,13 @@ pub struct TlsRecord {
 
 pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord> {
     move |input: &'a [u8]| {
-        let parser = and(
-            tls_content_type_parser(),
-            and(tls_version_parser(), size_header_parser())
-        );
-
-        parser.parse(&input).map(|ParserResult { parsed: (content_type, (version, _)), remaining }| {
-            ParserResult { parsed: TlsRecord { content_type, version }, remaining }
-        })
+        tls_content_type_parser()
+            .and(tls_version_parser())
+            .and(size_header_parser())
+            .parse(&input)
+            .map(|ParserResult { parsed: ((content_type, version), _), remaining }| {
+                ParserResult { parsed: TlsRecord { content_type, version }, remaining }
+            })
     }
 }
 
