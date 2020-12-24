@@ -162,10 +162,18 @@ mod tests {
     }
 
     #[test]
-    fn repeat_parser_success_limited() -> Result<(), Box<dyn Error>> {
+    fn repeat_parser_success_limited_included() -> Result<(), Box<dyn Error>> {
         let result = bytes_parser(b'a').repeat(..=2).parse(b"aaaccc")?;
         assert_eq!(vec![b'a', b'a'], result.parsed);
         assert_eq!(b"accc", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn repeat_parser_success_limited_excluded() -> Result<(), Box<dyn Error>> {
+        let result = bytes_parser(b'a').repeat(..2).parse(b"aaaccc")?;
+        assert_eq!(vec![b'a'], result.parsed);
+        assert_eq!(b"aaccc", result.remaining);
         Ok(())
     }
 }
