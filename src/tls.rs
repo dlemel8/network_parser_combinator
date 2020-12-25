@@ -1,4 +1,4 @@
-use crate::general::size_header_parser;
+use crate::general::sized_by_header_parser;
 use crate::parser::{Parser, ParserResult};
 
 #[derive(Debug, PartialEq)]
@@ -46,25 +46,28 @@ fn tls_version_parser<'a>() -> impl Parser<'a, String> {
 
 
 #[derive(Debug, PartialEq)]
-pub struct TlsHandshakeProtocol {
-    // TODO - convert to enum after parsing record payload
+pub enum TlsData<'a> {
+    HandshakeProtocol,
+    ChangeCipherSpec,
+    Encrypted(&'a [u8]),
 }
 
 
 #[derive(Debug, PartialEq)]
-pub struct TlsRecord {
+pub struct TlsRecord<'a> {
     pub content_type: TlsContentType,
     pub version: String,
+    pub data: TlsData<'a>,
 }
 
-pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord> {
+pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord<'a>> {
     move |input: &'a [u8]| {
         tls_content_type_parser()
             .and(tls_version_parser())
-            .and(size_header_parser())
+            .and(sized_by_header_parser())
             .parse(&input)
-            .map(|ParserResult { parsed: ((content_type, version), _), remaining }| {
-                ParserResult { parsed: TlsRecord { content_type, version }, remaining }
+            .map(|ParserResult { parsed: ((content_type, version), data), remaining }| {
+                ParserResult { parsed: TlsRecord { content_type, version, data: TlsData::Encrypted(data) }, remaining }
             })
     }
 }
@@ -74,7 +77,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsRecord};
+    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsRecord, TlsData};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -142,12 +145,13 @@ mod tests {
     }
 
     #[test]
-    fn record_parser_on_valid_input_return_record() -> Result<(), Box<dyn Error>> {
+    fn record_parser_on_valid_application_input_return_record() -> Result<(), Box<dyn Error>> {
         let input: [u8; 9] = [23, 3, 2, 0, 2, 100, 5, 14, 2];
         let result = tls_record_parser().parse(&input)?;
         let expected = TlsRecord {
             content_type: TlsContentType::ApplicationData,
             version: "1.1".to_string(),
+            data: TlsData::Encrypted(&[100, 5]),
         };
         assert_eq!(expected, result.parsed);
         assert_eq!([14, 2], result.remaining);
