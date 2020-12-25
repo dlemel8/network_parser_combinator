@@ -90,32 +90,8 @@ mod tests {
     use std::error::Error;
 
     use crate::*;
-    use crate::parser::{ParserResult, one_of};
-
-    fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
-        move |input: &'a [u8]| {
-            if input.is_empty() || input[0] != b {
-                return Err(format!("expected {}, got {:?}", b, input));
-            }
-            Ok(ParserResult { parsed: b, remaining: &input[1..] })
-        }
-    }
-
-    #[test]
-    fn parser_failure() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'h').parse(b"$hello");
-        assert!(result.is_err());
-        Ok(())
-    }
-
-    #[test]
-    fn parser_success() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'$').parse(b"$hello")?;
-        assert_eq!(b'$', result.parsed);
-        assert_eq!(b"hello", result.remaining);
-        Ok(())
-    }
-
+    use crate::parser::one_of;
+    use crate::general::byte_parser;
 
     #[test]
     fn and_parser_failure_in_first() -> Result<(), Box<dyn Error>> {

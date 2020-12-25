@@ -1,7 +1,7 @@
-use crate::general::sized_by_header_parser;
+use crate::general::{byte_parser, sized_by_header_parser};
 use crate::parser::{Parser, ParserResult};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TlsContentType {
     ChangeCipherSpec,
     Alert,
@@ -52,6 +52,18 @@ pub enum TlsData<'a> {
     Encrypted(&'a [u8]),
 }
 
+fn tls_data_parser<'a>(content_type: TlsContentType) -> impl Parser<'a, TlsData<'a>> {
+    move |input: &'a [u8]| {
+        match content_type {
+            TlsContentType::ChangeCipherSpec =>
+                byte_parser(1).parse(&input).map(|ParserResult { parsed: _, remaining }| {
+                    ParserResult { parsed: TlsData::ChangeCipherSpec, remaining }
+                }),
+            _ => Ok(ParserResult { parsed: TlsData::Encrypted(&input), remaining: &input[input.len()..] })
+        }
+    }
+}
+
 
 #[derive(Debug, PartialEq)]
 pub struct TlsRecord<'a> {
@@ -66,8 +78,11 @@ pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord<'a>> {
             .and(tls_version_parser())
             .and(sized_by_header_parser())
             .parse(&input)
-            .map(|ParserResult { parsed: ((content_type, version), data), remaining }| {
-                ParserResult { parsed: TlsRecord { content_type, version, data: TlsData::Encrypted(data) }, remaining }
+            .and_then(|ParserResult { parsed: ((content_type, version), raw_data), remaining }| {
+                tls_data_parser(content_type).parse(raw_data)
+                    .map(|ParserResult { parsed: data, remaining: _ }| {
+                        ParserResult { parsed: TlsRecord { content_type, version, data }, remaining }
+                    })
             })
     }
 }
@@ -77,7 +92,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsRecord, TlsData};
+    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsRecord};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -155,6 +170,20 @@ mod tests {
         };
         assert_eq!(expected, result.parsed);
         assert_eq!([14, 2], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn record_parser_on_valid_change_cipher_spec_input_return_record() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 9] = [20, 3, 1, 0, 1, 1, 5, 14, 2];
+        let result = tls_record_parser().parse(&input)?;
+        let expected = TlsRecord {
+            content_type: TlsContentType::ChangeCipherSpec,
+            version: "1.0".to_string(),
+            data: TlsData::ChangeCipherSpec,
+        };
+        assert_eq!(expected, result.parsed);
+        assert_eq!([5, 14, 2], result.remaining);
         Ok(())
     }
 }
