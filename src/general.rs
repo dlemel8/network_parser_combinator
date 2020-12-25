@@ -12,7 +12,7 @@ pub fn size_header_parser<'a>() -> impl Parser<'a, &'a [u8]> {
             return Err(format!("not enough data {}", input.len()));
         }
 
-        Ok(ParserResult{ parsed: &input[2..end_offset], remaining: &input[end_offset..] })
+        Ok(ParserResult { parsed: &input[2..end_offset], remaining: &input[end_offset..] })
     }
 }
 
@@ -20,7 +20,7 @@ pub fn size_header_parser<'a>() -> impl Parser<'a, &'a [u8]> {
 mod tests {
     use std::error::Error;
 
-    use crate::network::size_header_parser;
+    use crate::general::size_header_parser;
     use crate::parser::Parser;
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::network::size_header_parser;
+use crate::general::size_header_parser;
 use crate::parser::{Parser, ParserResult};
 
 #[derive(Debug, PartialEq)]
@@ -43,6 +43,13 @@ fn tls_version_parser<'a>() -> impl Parser<'a, String> {
         Ok(ParserResult { parsed: version, remaining: &input[2..] })
     }
 }
+
+
+#[derive(Debug, PartialEq)]
+pub struct TlsHandshakeProtocol {
+    // TODO - convert to enum after parsing record payload
+}
+
 
 #[derive(Debug, PartialEq)]
 pub struct TlsRecord {

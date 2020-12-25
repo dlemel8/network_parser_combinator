@@ -36,6 +36,20 @@ impl<'a, T> Parser<'a, T> for BoxedParser<'a, T> {
     }
 }
 
+pub fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser<'a, T> {
+    move |input: &'a [u8]| {
+        let internal_input = input;
+        for option in options.iter() {
+            let result = option.parse(internal_input);
+            if result.is_ok() {
+                return result;
+            }
+        };
+        Err(format!("all {} options failed", options.len()))
+    }
+}
+
+
 fn and<'a, A: 'a, B: 'a>(p1: impl Parser<'a, A>, p2: impl Parser<'a, B>) -> impl Parser<'a, (A, B)> {
     move |input: &'a [u8]| {
         p1.parse(input).and_then(|ParserResult { parsed: a, remaining: remaining1 }| {
@@ -76,9 +90,9 @@ mod tests {
     use std::error::Error;
 
     use crate::*;
-    use crate::parser::ParserResult;
+    use crate::parser::{ParserResult, one_of};
 
-    fn bytes_parser<'a>(b: u8) -> impl Parser<'a, u8> {
+    fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
         move |input: &'a [u8]| {
             if input.is_empty() || input[0] != b {
                 return Err(format!("expected {}, got {:?}", b, input));
@@ -89,14 +103,14 @@ mod tests {
 
     #[test]
     fn parser_failure() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'h').parse(b"$hello");
+        let result = byte_parser(b'h').parse(b"$hello");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn parser_success() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'$').parse(b"$hello")?;
+        let result = byte_parser(b'$').parse(b"$hello")?;
         assert_eq!(b'$', result.parsed);
         assert_eq!(b"hello", result.remaining);
         Ok(())
@@ -105,21 +119,21 @@ mod tests {
 
     #[test]
     fn and_parser_failure_in_first() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').and(bytes_parser(b'b')).parse(b"ccc");
+        let result = byte_parser(b'a').and(byte_parser(b'b')).parse(b"ccc");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn and_parser_failure_in_second() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').and(bytes_parser(b'b')).parse(b"acc");
+        let result = byte_parser(b'a').and(byte_parser(b'b')).parse(b"acc");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn and_parser_success_single() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').and(bytes_parser(b'b')).parse(b"abc")?;
+        let result = byte_parser(b'a').and(byte_parser(b'b')).parse(b"abc")?;
         assert_eq!((b'a', b'b'), result.parsed);
         assert_eq!(b"c", result.remaining);
         Ok(())
@@ -128,9 +142,9 @@ mod tests {
     #[test]
     fn and_parser_success_multiple() -> Result<(), Box<dyn Error>> {
         let result =
-            bytes_parser(b'a')
-                .and(bytes_parser(b'b'))
-                .and(bytes_parser(b'c'))
+            byte_parser(b'a')
+                .and(byte_parser(b'b'))
+                .and(byte_parser(b'c'))
                 .parse(b"abc")?;
         assert_eq!(((b'a', b'b'), b'c'), result.parsed);
         assert_eq!(b"", result.remaining);
@@ -139,14 +153,14 @@ mod tests {
 
     #[test]
     fn repeat_parser_failure() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').repeat(1..).parse(b"ccc");
+        let result = byte_parser(b'a').repeat(1..).parse(b"ccc");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn repeat_parser_success_empty() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').repeat(..).parse(b"ccc")?;
+        let result = byte_parser(b'a').repeat(..).parse(b"ccc")?;
         let empty: Vec<u8> = vec![];
         assert_eq!(empty, result.parsed);
         assert_eq!(b"ccc", result.remaining);
@@ -155,7 +169,7 @@ mod tests {
 
     #[test]
     fn repeat_parser_success_unlimited() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').repeat(1..).parse(b"aaaccc")?;
+        let result = byte_parser(b'a').repeat(1..).parse(b"aaaccc")?;
         assert_eq!(vec![b'a', b'a', b'a'], result.parsed);
         assert_eq!(b"ccc", result.remaining);
         Ok(())
@@ -163,7 +177,7 @@ mod tests {
 
     #[test]
     fn repeat_parser_success_limited_included() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').repeat(..=2).parse(b"aaaccc")?;
+        let result = byte_parser(b'a').repeat(..=2).parse(b"aaaccc")?;
         assert_eq!(vec![b'a', b'a'], result.parsed);
         assert_eq!(b"accc", result.remaining);
         Ok(())
@@ -171,9 +185,26 @@ mod tests {
 
     #[test]
     fn repeat_parser_success_limited_excluded() -> Result<(), Box<dyn Error>> {
-        let result = bytes_parser(b'a').repeat(..2).parse(b"aaaccc")?;
+        let result = byte_parser(b'a').repeat(..2).parse(b"aaaccc")?;
         assert_eq!(vec![b'a'], result.parsed);
         assert_eq!(b"aaccc", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn one_of_parser_failed() -> Result<(), Box<dyn Error>> {
+        let options = vec![byte_parser(b'a'), byte_parser(b'b')];
+        let result = one_of(options).parse(b"c");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn one_of_parser_success() -> Result<(), Box<dyn Error>> {
+        let options = vec![byte_parser(b'a'), byte_parser(b'b')];
+        let result = one_of(options).parse(b"ba")?;
+        assert_eq!(b'b', result.parsed);
+        assert_eq!(b"a", result.remaining);
         Ok(())
     }
 }
