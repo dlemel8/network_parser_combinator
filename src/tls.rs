@@ -92,7 +92,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsRecord};
+    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsRecord};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -140,6 +140,38 @@ mod tests {
         let result = tls_version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn data_parser_on_encrypted_content_type_return_data_with_all_input() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [3, 3, 7];
+        let result = tls_data_parser(TlsContentType::Heartbeat).parse(&input)?;
+        assert_eq!(TlsData::Encrypted(&input), result.parsed);
+        assert!(result.remaining.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn data_parser_on_change_cipher_spec_content_type_and_empty_input_return_err() -> Result<(), Box<dyn Error>> {
+        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(b"");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn data_parser_on_change_cipher_spec_content_type_and_invalid_input_return_err() -> Result<(), Box<dyn Error>> {
+        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(b"a");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn data_parser_on_change_cipher_spec_content_type_and_valid_input_return_data() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [1, 2, 3];
+        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(&input)?;
+        assert_eq!(TlsData::ChangeCipherSpec, result.parsed);
+        assert_eq!([2, 3], result.remaining);
         Ok(())
     }
 
