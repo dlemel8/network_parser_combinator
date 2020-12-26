@@ -9,14 +9,19 @@ pub fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
     }
 }
 
-pub fn sized_by_header_parser<'a>() -> impl Parser<'a, &'a [u8]> {
+pub fn sized_by_header_parser<'a>(header_size_in_bytes: usize) -> impl Parser<'a, &'a [u8]> {
     move |input: &'a [u8]| {
-        if input.len() < 2 {
+        if input.len() < header_size_in_bytes {
             return Err(format!("header too small {}", input.len()));
         }
 
-        let size = u16::from_be_bytes([input[0], input[1]]) as usize;
-        let end_offset = size + 2;
+        let size = match header_size_in_bytes {
+            2 => u16::from_be_bytes([input[0], input[1]]) as usize,
+            3 => u32::from_be_bytes([0, input[0], input[1], input[2]]) as usize,
+            _ => return Err(format!("header size {} is not supported", header_size_in_bytes))
+        };
+
+        let end_offset = size + header_size_in_bytes;
         if input.len() < end_offset {
             return Err(format!("not enough data {}", input.len()));
         }
@@ -52,7 +57,7 @@ mod tests {
     #[test]
     fn sized_by_header_parser_on_not_enough_data_for_header_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 1] = [1];
-        let result = sized_by_header_parser().parse(&input);
+        let result = sized_by_header_parser(2).parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -60,7 +65,7 @@ mod tests {
     #[test]
     fn sized_by_header_parser_on_value_smaller_than_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [0, 2, 1];
-        let result = sized_by_header_parser().parse(&input);
+        let result = sized_by_header_parser(2).parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -68,7 +73,7 @@ mod tests {
     #[test]
     fn sized_by_header_parser_on_enough_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 6] = [0, 2, 1, 2, 3, 4];
-        let result = sized_by_header_parser().parse(&input)?;
+        let result = sized_by_header_parser(2).parse(&input)?;
         assert_eq!([1, 2], result.parsed);
         assert_eq!([3, 4], result.remaining);
         Ok(())
