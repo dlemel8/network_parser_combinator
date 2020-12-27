@@ -26,7 +26,7 @@ pub fn sized_by_header_parser<'a>(header_size_in_bytes: usize) -> impl Parser<'a
             return Err(format!("not enough data {}", input.len()));
         }
 
-        Ok(ParserResult { parsed: &input[2..end_offset], remaining: &input[end_offset..] })
+        Ok(ParserResult { parsed: &input[header_size_in_bytes..end_offset], remaining: &input[end_offset..] })
     }
 }
 
