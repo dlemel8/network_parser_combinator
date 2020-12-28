@@ -89,8 +89,7 @@ fn repeat<'a, T: 'a>(p: impl Parser<'a, T>, times: impl RangeBounds<usize> + 'a)
 mod tests {
     use std::error::Error;
 
-    use crate::*;
-    use crate::parser::one_of;
+    use crate::parser::{one_of, Parser};
     use crate::general::byte_parser;
 
     #[test]
