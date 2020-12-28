@@ -9,6 +9,10 @@ pub struct ParserResult<'a, T> {
 pub trait Parser<'a, T: 'a> {
     fn parse(&self, input: &'a [u8]) -> Result<ParserResult<'a, T>, String>;
 
+    fn map<U: 'a>(self, f: impl Fn(T) -> U + 'a) -> BoxedParser<'a, U> where Self: Sized + 'a {
+        BoxedParser { parser: Box::new(map(self, f)) }
+    }
+
     fn and<U: 'a>(self, another: impl Parser<'a, U> + 'a) -> BoxedParser<'a, (T, U)> where Self: Sized + 'a {
         BoxedParser { parser: Box::new(and(self, another)) }
     }
@@ -49,6 +53,13 @@ pub fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser<'a, T>
     }
 }
 
+fn map<'a, A: 'a, B: 'a>(p: impl Parser<'a, A>, f: impl Fn(A) -> B) -> impl Parser<'a, B> {
+    move |input: &'a [u8]| {
+        p.parse(&input).map(|ParserResult { parsed: a, remaining }|{
+            ParserResult{parsed: f(a), remaining}
+        })
+    }
+}
 
 fn and<'a, A: 'a, B: 'a>(p1: impl Parser<'a, A>, p2: impl Parser<'a, B>) -> impl Parser<'a, (A, B)> {
     move |input: &'a [u8]| {
@@ -89,8 +100,8 @@ fn repeat<'a, T: 'a>(p: impl Parser<'a, T>, times: impl RangeBounds<usize> + 'a)
 mod tests {
     use std::error::Error;
 
-    use crate::parser::{one_of, Parser};
     use crate::general::byte_parser;
+    use crate::parser::{one_of, Parser};
 
     #[test]
     fn and_parser_failure_in_first() -> Result<(), Box<dyn Error>> {
@@ -180,6 +191,14 @@ mod tests {
         let result = one_of(options).parse(b"ba")?;
         assert_eq!(b'b', result.parsed);
         assert_eq!(b"a", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn map_parser() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').map(|x| {x - 32}).parse(b"abc")?;
+        assert_eq!(b'A', result.parsed);
+        assert_eq!(b"bc", result.remaining);
         Ok(())
     }
 }

@@ -62,29 +62,21 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         }
 
         one_of(vec![
-            byte_parser(1),
-            byte_parser(2),
-            byte_parser(11),
-            byte_parser(12),
-            byte_parser(14),
-            byte_parser(16),
+            byte_parser(1).map(|_|{TlsHandshakeProtocol::ClientHello}),
+            byte_parser(2).map(|_|{TlsHandshakeProtocol::ServerHello}),
+            byte_parser(11).map(|_|{TlsHandshakeProtocol::Certificate}),
+            byte_parser(12).map(|_|{TlsHandshakeProtocol::ServerKeyExchange}),
+            byte_parser(14).map(|_|{TlsHandshakeProtocol::ServerHelloDone}),
+            byte_parser(16).map(|_|{TlsHandshakeProtocol::ClientKeyExchange}),
         ])
             .and(sized_by_header_parser(3))
+            .map(|(handshake_type, _)| {handshake_type})
             .parse(&input)
-            .map(|ParserResult { parsed: (handshake_type, _), remaining }| {
-                match handshake_type {
-                    1 => ParserResult { parsed: TlsHandshakeProtocol::ClientHello, remaining },
-                    2 => ParserResult { parsed: TlsHandshakeProtocol::ServerHello, remaining },
-                    11 => ParserResult { parsed: TlsHandshakeProtocol::Certificate, remaining },
-                    12 => ParserResult { parsed: TlsHandshakeProtocol::ServerKeyExchange, remaining },
-                    14 => ParserResult { parsed: TlsHandshakeProtocol::ServerHelloDone, remaining },
-                    16 => ParserResult { parsed: TlsHandshakeProtocol::ClientKeyExchange, remaining },
-                    // TODO - remove this duplication
-                    _ => ParserResult { parsed: TlsHandshakeProtocol::Encrypted(&input), remaining: &input[input.len()..]},
-                }
-            })
             .or_else(|_| {
-                Ok(ParserResult { parsed: TlsHandshakeProtocol::Encrypted(&input), remaining: &input[input.len()..] })
+                Ok(ParserResult {
+                    parsed: TlsHandshakeProtocol::Encrypted(&input),
+                    remaining: &input[input.len()..]
+                })
             })
     }
 }
@@ -100,14 +92,17 @@ fn tls_data_parser<'a>(content_type: TlsContentType) -> impl Parser<'a, TlsData<
     move |input: &'a [u8]| {
         match content_type {
             TlsContentType::ChangeCipherSpec =>
-                byte_parser(1).parse(&input).map(|ParserResult { parsed: _, remaining }| {
-                    ParserResult { parsed: TlsData::ChangeCipherSpec, remaining }
-                }),
+                byte_parser(1)
+                    .map(|_| {TlsData::ChangeCipherSpec})
+                    .parse(&input),
             TlsContentType::Handshake =>
-                tls_handshake_parser().parse(&input).map(|ParserResult { parsed: handshake, remaining }| {
-                    ParserResult { parsed: TlsData::HandshakeProtocol(handshake), remaining }
-                }),
-            _ => Ok(ParserResult { parsed: TlsData::Encrypted(&input), remaining: &input[input.len()..] })
+                tls_handshake_parser()
+                    .map(|handshake|{TlsData::HandshakeProtocol(handshake)})
+                    .parse(&input),
+            _ => Ok(ParserResult {
+                parsed: TlsData::Encrypted(&input),
+                remaining: &input[input.len()..]
+            })
         }
     }
 }
