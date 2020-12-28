@@ -12,20 +12,17 @@ pub enum TlsContentType {
 
 fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
     move |input: &'a [u8]| {
-        if input.is_empty() {
-            return Err("nothing to parse".to_string());
-        }
-
-        let content_type = match input[0] {
-            20 => TlsContentType::ChangeCipherSpec,
-            21 => TlsContentType::Alert,
-            22 => TlsContentType::Handshake,
-            23 => TlsContentType::ApplicationData,
-            24 => TlsContentType::Heartbeat,
-            _ => return Err(format!("unknown content type {}", input[0])),
-        };
-
-        Ok(ParserResult { parsed: content_type, remaining: &input[1..] })
+        one_of(vec![
+            byte_parser(20).map(|_| { TlsContentType::ChangeCipherSpec }),
+            byte_parser(21).map(|_| { TlsContentType::Alert }),
+            byte_parser(22).map(|_| { TlsContentType::Handshake }),
+            byte_parser(23).map(|_| { TlsContentType::ApplicationData }),
+            byte_parser(24).map(|_| { TlsContentType::Heartbeat }),
+        ])
+            .parse(&input)
+            .or_else(|_| {
+                Err(format!("unknown content type {:?}", input))
+            })
     }
 }
 
@@ -62,20 +59,20 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         }
 
         one_of(vec![
-            byte_parser(1).map(|_|{TlsHandshakeProtocol::ClientHello}),
-            byte_parser(2).map(|_|{TlsHandshakeProtocol::ServerHello}),
-            byte_parser(11).map(|_|{TlsHandshakeProtocol::Certificate}),
-            byte_parser(12).map(|_|{TlsHandshakeProtocol::ServerKeyExchange}),
-            byte_parser(14).map(|_|{TlsHandshakeProtocol::ServerHelloDone}),
-            byte_parser(16).map(|_|{TlsHandshakeProtocol::ClientKeyExchange}),
+            byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
+            byte_parser(2).map(|_| { TlsHandshakeProtocol::ServerHello }),
+            byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
+            byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
+            byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
+            byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
         ])
             .and(sized_by_header_parser(3))
-            .map(|(handshake_type, _)| {handshake_type})
+            .map(|(handshake_type, _)| { handshake_type })
             .parse(&input)
             .or_else(|_| {
                 Ok(ParserResult {
                     parsed: TlsHandshakeProtocol::Encrypted(&input),
-                    remaining: &input[input.len()..]
+                    remaining: &input[input.len()..],
                 })
             })
     }
@@ -93,20 +90,19 @@ fn tls_data_parser<'a>(content_type: TlsContentType) -> impl Parser<'a, TlsData<
         match content_type {
             TlsContentType::ChangeCipherSpec =>
                 byte_parser(1)
-                    .map(|_| {TlsData::ChangeCipherSpec})
+                    .map(|_| { TlsData::ChangeCipherSpec })
                     .parse(&input),
             TlsContentType::Handshake =>
                 tls_handshake_parser()
-                    .map(|handshake|{TlsData::HandshakeProtocol(handshake)})
+                    .map(|handshake| { TlsData::HandshakeProtocol(handshake) })
                     .parse(&input),
             _ => Ok(ParserResult {
                 parsed: TlsData::Encrypted(&input),
-                remaining: &input[input.len()..]
+                remaining: &input[input.len()..],
             })
         }
     }
 }
-
 
 #[derive(Debug, PartialEq)]
 pub struct TlsRecord<'a> {
