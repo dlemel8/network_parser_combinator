@@ -71,7 +71,7 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         byte_parser(2)
             .and(sized_by_header_parser(3))
             .parse(&input)
-            .and_then(|ParserResult{parsed: (_, data), remaining}| {
+            .and_then(|ParserResult{parsed: (_, data), remaining: _}| {
                 tls_server_hello_parser().parse(data)
             })
             .or_else(|_| {
