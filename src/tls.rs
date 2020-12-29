@@ -20,9 +20,6 @@ fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
             byte_parser(24).map(|_| { TlsContentType::Heartbeat }),
         ])
             .parse(&input)
-            .or_else(|_| {
-                Err(format!("unknown content type {:?}", input))
-            })
     }
 }
 
@@ -30,16 +27,14 @@ type TlsVersion = String;
 
 fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
     move |input: &'a [u8]| {
-        if input.len() < 2 {
-            return Err(format!("not enough data {}", input.len()));
-        }
-
-        let version = match (input[0], input[1]) {
-            (3, y @ 1..=4) => format!("1.{}", y - 1),
-            (x, y) => return Err(format!("unknown version {}:{}", x, y)),
-        };
-
-        Ok(ParserResult { parsed: version, remaining: &input[2..] })
+        byte_parser(3)
+            .and(
+                one_of(vec![
+                    byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
+                ])
+            )
+            .map(|(_, y)| { format!("1.{}", y - 1) })
+            .parse(&input)
     }
 }
 
@@ -57,7 +52,7 @@ pub enum TlsHandshakeProtocol<'a> {
 fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
     move |input: &'a [u8]| {
         tls_version_parser()
-            .map(|version| {TlsHandshakeProtocol::ServerHello(version)})
+            .map(|version| { TlsHandshakeProtocol::ServerHello(version) })
             .parse(&input)
     }
 }
@@ -71,7 +66,7 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         byte_parser(2)
             .and(sized_by_header_parser(3))
             .parse(&input)
-            .and_then(|ParserResult{parsed: (_, data), remaining: _}| {
+            .and_then(|ParserResult { parsed: (_, data), remaining: _ }| {
                 tls_server_hello_parser().parse(data)
             })
             .or_else(|_| {
