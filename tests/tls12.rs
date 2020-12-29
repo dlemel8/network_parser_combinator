@@ -37,7 +37,7 @@ fn tls_parser_server_start_of_handshake() -> Result<(), Box<dyn Error>> {
         TlsRecord {
             content_type: TlsContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerHello)
+            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerHello("1.2".to_string()))
         },
         TlsRecord {
             content_type: TlsContentType::Handshake,

@@ -26,7 +26,9 @@ fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
     }
 }
 
-fn tls_version_parser<'a>() -> impl Parser<'a, String> {
+type TlsVersion = String;
+
+fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
     move |input: &'a [u8]| {
         if input.len() < 2 {
             return Err(format!("not enough data {}", input.len()));
@@ -44,12 +46,20 @@ fn tls_version_parser<'a>() -> impl Parser<'a, String> {
 #[derive(Debug, PartialEq)]
 pub enum TlsHandshakeProtocol<'a> {
     ClientHello,
-    ServerHello,
+    ServerHello(TlsVersion),
     Certificate,
     ServerKeyExchange,
     ServerHelloDone,
     ClientKeyExchange,
     Encrypted(&'a [u8]),
+}
+
+fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
+    move |input: &'a [u8]| {
+        tls_version_parser()
+            .map(|version| {TlsHandshakeProtocol::ServerHello(version)})
+            .parse(&input)
+    }
 }
 
 fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
@@ -58,22 +68,29 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
             return Err("nothing to parse".to_string());
         }
 
-        one_of(vec![
-            byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
-            byte_parser(2).map(|_| { TlsHandshakeProtocol::ServerHello }),
-            byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
-            byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
-            byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
-            byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
-        ])
+        byte_parser(2)
             .and(sized_by_header_parser(3))
-            .map(|(handshake_type, _)| { handshake_type })
             .parse(&input)
+            .and_then(|ParserResult{parsed: (_, data), remaining}| {
+                tls_server_hello_parser().parse(data)
+            })
             .or_else(|_| {
-                Ok(ParserResult {
-                    parsed: TlsHandshakeProtocol::Encrypted(&input),
-                    remaining: &input[input.len()..],
-                })
+                one_of(vec![
+                    byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
+                    byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
+                    byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
+                    byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
+                    byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
+                ])
+                    .and(sized_by_header_parser(3))
+                    .map(|(handshake_protocol, _)| { handshake_protocol })
+                    .parse(&input)
+                    .or_else(|_| {
+                        Ok(ParserResult {
+                            parsed: TlsHandshakeProtocol::Encrypted(&input),
+                            remaining: &input[input.len()..],
+                        })
+                    })
             })
     }
 }
