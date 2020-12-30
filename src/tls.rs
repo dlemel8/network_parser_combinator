@@ -11,31 +11,25 @@ pub enum TlsContentType {
 }
 
 fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
-    move |input: &'a [u8]| {
-        one_of(vec![
-            byte_parser(20).map(|_| { TlsContentType::ChangeCipherSpec }),
-            byte_parser(21).map(|_| { TlsContentType::Alert }),
-            byte_parser(22).map(|_| { TlsContentType::Handshake }),
-            byte_parser(23).map(|_| { TlsContentType::ApplicationData }),
-            byte_parser(24).map(|_| { TlsContentType::Heartbeat }),
-        ])
-            .parse(&input)
-    }
+    one_of(vec![
+        byte_parser(20).map(|_| { TlsContentType::ChangeCipherSpec }),
+        byte_parser(21).map(|_| { TlsContentType::Alert }),
+        byte_parser(22).map(|_| { TlsContentType::Handshake }),
+        byte_parser(23).map(|_| { TlsContentType::ApplicationData }),
+        byte_parser(24).map(|_| { TlsContentType::Heartbeat }),
+    ])
 }
 
 type TlsVersion = String;
 
 fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
-    move |input: &'a [u8]| {
-        byte_parser(3)
-            .and(
-                one_of(vec![
-                    byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
-                ])
-            )
-            .map(|(_, y)| { format!("1.{}", y - 1) })
-            .parse(&input)
-    }
+    byte_parser(3)
+        .and(
+            one_of(vec![
+                byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
+            ])
+        )
+        .map(|(_, y)| { format!("1.{}", y - 1) })
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,11 +44,8 @@ pub enum TlsHandshakeProtocol<'a> {
 }
 
 fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
-    move |input: &'a [u8]| {
-        tls_version_parser()
-            .map(|version| { TlsHandshakeProtocol::ServerHello(version) })
-            .parse(&input)
-    }
+    tls_version_parser()
+        .map(|version| { TlsHandshakeProtocol::ServerHello(version) })
 }
 
 fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
