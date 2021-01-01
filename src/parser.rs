@@ -13,8 +13,16 @@ pub trait Parser<'a, T: 'a> {
         BoxedParser { parser: Box::new(map(self, f)) }
     }
 
+    fn then<U: 'a, P: Parser<'a, U> + 'a>(self, f: impl Fn(T) -> P + 'a) -> BoxedParser<'a, U> where Self: Sized + 'a {
+        BoxedParser { parser: Box::new(then(self, f)) }
+    }
+
     fn and<U: 'a>(self, another: impl Parser<'a, U> + 'a) -> BoxedParser<'a, (T, U)> where Self: Sized + 'a {
         BoxedParser { parser: Box::new(and(self, another)) }
+    }
+
+    fn skip_to(self, offset: usize) -> BoxedParser<'a, T> where Self: Sized + 'a {
+        BoxedParser { parser: Box::new(skip_to(self, offset)) }
     }
 
     fn repeat(self, times: impl RangeBounds<usize> + 'a) -> BoxedParser<'a, Vec<T>> where Self: Sized + 'a {
@@ -55,8 +63,16 @@ pub fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser<'a, T>
 
 fn map<'a, A: 'a, B: 'a>(p: impl Parser<'a, A>, f: impl Fn(A) -> B) -> impl Parser<'a, B> {
     move |input: &'a [u8]| {
-        p.parse(&input).map(|ParserResult { parsed: a, remaining }|{
-            ParserResult{parsed: f(a), remaining}
+        p.parse(&input).map(|ParserResult { parsed: a, remaining }| {
+            ParserResult { parsed: f(a), remaining }
+        })
+    }
+}
+
+fn then<'a, A: 'a, B: 'a, P: Parser<'a, B>>(p: impl Parser<'a, A>, f: impl Fn(A) -> P) -> impl Parser<'a, B> {
+    move |input: &'a [u8]| {
+        p.parse(&input).and_then(|ParserResult { parsed: a, remaining }| {
+            f(a).parse(remaining)
         })
     }
 }
@@ -67,6 +83,18 @@ fn and<'a, A: 'a, B: 'a>(p1: impl Parser<'a, A>, p2: impl Parser<'a, B>) -> impl
             p2.parse(remaining1).map(|ParserResult { parsed: b, remaining: remaining2 }| {
                 ParserResult { parsed: (a, b), remaining: remaining2 }
             })
+        })
+    }
+}
+
+fn skip_to<'a, T: 'a>(p: impl Parser<'a, T>, offset: usize) -> impl Parser<'a, T> {
+    move |input: &'a [u8]| {
+        if input.len() < offset {
+            return Err(format!("not enough data {}", input.len()));
+        }
+
+        p.parse(&input[..offset]).and_then(|ParserResult { parsed: a, remaining: _ }| {
+            Ok(ParserResult { parsed: a, remaining: &input[offset..] })
         })
     }
 }
@@ -196,9 +224,46 @@ mod tests {
 
     #[test]
     fn map_parser() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'a').map(|x| {x - 32}).parse(b"abc")?;
+        let result = byte_parser(b'a').map(|x| { x - 32 }).parse(b"abc")?;
         assert_eq!(b'A', result.parsed);
         assert_eq!(b"bc", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn then_parser_failed() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').then(|_|byte_parser(b'b')).parse(b"aac");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn then_parser_success() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').then(|_|byte_parser(b'b')).parse(b"abc")?;
+        assert_eq!(b'b', result.parsed);
+        assert_eq!(b"c", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn skip_to_parser_failed_no_enough_input() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').skip_to(8).parse(b"aaa");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn skip_to_parser_failed_base_parser_try_to_access_after_offser_input() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').repeat(2..3).skip_to(1).parse(b"aaa");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn skip_to_parser_success() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').repeat(2..3).skip_to(2).parse(b"aaa")?;
+        assert_eq!(vec![b'a', b'a'], result.parsed);
+        assert_eq!(b"a", result.remaining);
         Ok(())
     }
 }

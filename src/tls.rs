@@ -1,4 +1,4 @@
-use crate::general::{byte_parser, sized_by_header_parser};
+use crate::general::{byte_parser, size_header_parser};
 use crate::parser::{one_of, Parser, ParserResult};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -23,13 +23,12 @@ fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
 type TlsVersion = String;
 
 fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
-    byte_parser(3)
-        .and(
-            one_of(vec![
-                byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
-            ])
-        )
-        .map(|(_, y)| { format!("1.{}", y - 1) })
+    byte_parser(3).then(|_| {
+        one_of(vec![
+            byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
+        ])
+            .map(|x| { format!("1.{}", x - 1) })
+    })
 }
 
 #[derive(Debug, PartialEq)]
@@ -54,29 +53,22 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
             return Err("nothing to parse".to_string());
         }
 
-        byte_parser(2)
-            .and(sized_by_header_parser(3))
+        one_of(vec![
+            byte_parser(2)
+                .and(size_header_parser(3, false))
+                .then(|(_, size)| tls_server_hello_parser().skip_to(size)),
+            byte_parser(1).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ClientHello }),
+            byte_parser(11).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::Certificate }),
+            byte_parser(12).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
+            byte_parser(14).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
+            byte_parser(16).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
+        ])
             .parse(&input)
-            .and_then(|ParserResult { parsed: (_, data), remaining: _ }| {
-                tls_server_hello_parser().parse(data)
-            })
             .or_else(|_| {
-                one_of(vec![
-                    byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
-                    byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
-                    byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
-                    byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
-                    byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
-                ])
-                    .and(sized_by_header_parser(3))
-                    .map(|(handshake_protocol, _)| { handshake_protocol })
-                    .parse(&input)
-                    .or_else(|_| {
-                        Ok(ParserResult {
-                            parsed: TlsHandshakeProtocol::Encrypted(&input),
-                            remaining: &input[input.len()..],
-                        })
-                    })
+                Ok(ParserResult {
+                    parsed: TlsHandshakeProtocol::Encrypted(&input),
+                    remaining: &input[input.len()..],
+                })
             })
     }
 }
@@ -115,18 +107,14 @@ pub struct TlsRecord<'a> {
 }
 
 pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord<'a>> {
-    move |input: &'a [u8]| {
-        tls_content_type_parser()
-            .and(tls_version_parser())
-            .and(sized_by_header_parser(2))
-            .parse(&input)
-            .and_then(|ParserResult { parsed: ((content_type, version), raw_data), remaining }| {
-                tls_data_parser(content_type).parse(raw_data)
-                    .map(|ParserResult { parsed: data, remaining: _ }| {
-                        ParserResult { parsed: TlsRecord { content_type, version, data }, remaining }
-                    })
-            })
-    }
+    tls_content_type_parser()
+        .and(tls_version_parser())
+        .and(size_header_parser(2, false))
+        .then(|((content_type, version), size)|{
+            tls_data_parser(content_type)
+                .map(move |data|{TlsRecord { content_type, version: version.clone(), data }})
+                .skip_to(size)
+        })
 }
 
 #[cfg(test)]
