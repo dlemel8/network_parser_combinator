@@ -57,11 +57,15 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
             byte_parser(2)
                 .and(size_header_parser(3, false))
                 .then(|(_, size)| tls_server_hello_parser().skip_to(size)),
-            byte_parser(1).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ClientHello }),
-            byte_parser(11).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::Certificate }),
-            byte_parser(12).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
-            byte_parser(14).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
-            byte_parser(16).and(size_header_parser(3, true)).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
+            one_of(vec![
+                byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
+                byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
+                byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
+                byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
+                byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
+            ])
+                .and(size_header_parser(3, true))
+                .map(|(handshake, _)| { handshake }),
         ])
             .parse(&input)
             .or_else(|_| {
@@ -110,9 +114,9 @@ pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord<'a>> {
     tls_content_type_parser()
         .and(tls_version_parser())
         .and(size_header_parser(2, false))
-        .then(|((content_type, version), size)|{
+        .then(|((content_type, version), size)| {
             tls_data_parser(content_type)
-                .map(move |data|{TlsRecord { content_type, version: version.clone(), data }})
+                .map(move |data| { TlsRecord { content_type, version: version.clone(), data } })
                 .skip_to(size)
         })
 }
