@@ -33,13 +33,18 @@ fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
 
 #[derive(Debug, PartialEq)]
 pub enum TlsHandshakeProtocol<'a> {
-    ClientHello,
+    ClientHello(TlsVersion),
     ServerHello(TlsVersion),
     Certificate,
     ServerKeyExchange,
     ServerHelloDone,
     ClientKeyExchange,
     Encrypted(&'a [u8]),
+}
+
+fn tls_client_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
+    tls_version_parser()
+        .map(|version| { TlsHandshakeProtocol::ClientHello(version) })
 }
 
 fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
@@ -54,11 +59,13 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         }
 
         one_of(vec![
+            byte_parser(1)
+                .and(size_header_parser(3, false))
+                .then(|(_, size)| tls_client_hello_parser().skip_to(size)),
             byte_parser(2)
                 .and(size_header_parser(3, false))
                 .then(|(_, size)| tls_server_hello_parser().skip_to(size)),
             one_of(vec![
-                byte_parser(1).map(|_| { TlsHandshakeProtocol::ClientHello }),
                 byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
                 byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
                 byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
@@ -195,9 +202,9 @@ mod tests {
 
     #[test]
     fn handshake_parser_on_input_with_known_type_return_specific_handshake() -> Result<(), Box<dyn Error>> {
-        let input: [u8; 7] = [1, 0, 0, 1, 1, 3, 4];
+        let input: [u8; 7] = [12, 0, 0, 1, 1, 3, 4];
         let result = tls_handshake_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::ClientHello, result.parsed);
+        assert_eq!(TlsHandshakeProtocol::ServerKeyExchange, result.parsed);
         assert_eq!([3, 4], result.remaining);
         Ok(())
     }
@@ -243,9 +250,9 @@ mod tests {
 
     #[test]
     fn data_parser_on_handshake_content_type_and_valid_input_return_data() -> Result<(), Box<dyn Error>> {
-        let input: [u8; 7] = [1, 0, 0, 1, 1, 2, 3];
+        let input: [u8; 7] = [16, 0, 0, 1, 1, 2, 3];
         let result = tls_data_parser(TlsContentType::Handshake).parse(&input)?;
-        assert_eq!(TlsData::HandshakeProtocol(TlsHandshakeProtocol::ClientHello), result.parsed);
+        assert_eq!(TlsData::HandshakeProtocol(TlsHandshakeProtocol::ClientKeyExchange), result.parsed);
         assert_eq!([2, 3], result.remaining);
         Ok(())
     }
