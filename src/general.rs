@@ -16,6 +16,7 @@ pub fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> imp
         }
 
         let size = match header_size_in_bytes {
+            1 => input[0] as usize,
             2 => u16::from_be_bytes([input[0], input[1]]) as usize,
             3 => u32::from_be_bytes([0, input[0], input[1], input[2]]) as usize,
             _ => return Err(format!("header size {} is not supported", header_size_in_bytes))

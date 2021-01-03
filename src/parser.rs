@@ -21,6 +21,10 @@ pub trait Parser<'a, T: 'a> {
         BoxedParser { parser: Box::new(and(self, another)) }
     }
 
+    fn skip(self, size: usize) -> BoxedParser<'a, T> where Self: Sized + 'a {
+        BoxedParser { parser: Box::new(skip(self, size)) }
+    }
+
     fn skip_to(self, offset: usize) -> BoxedParser<'a, T> where Self: Sized + 'a {
         BoxedParser { parser: Box::new(skip_to(self, offset)) }
     }
@@ -83,6 +87,18 @@ fn and<'a, A: 'a, B: 'a>(p1: impl Parser<'a, A>, p2: impl Parser<'a, B>) -> impl
             p2.parse(remaining1).map(|ParserResult { parsed: b, remaining: remaining2 }| {
                 ParserResult { parsed: (a, b), remaining: remaining2 }
             })
+        })
+    }
+}
+
+fn skip<'a, T: 'a>(p: impl Parser<'a, T>, size: usize) -> impl Parser<'a, T> {
+    move |input: &'a [u8]| {
+        p.parse(&input).and_then(|ParserResult { parsed: a, remaining }| {
+            if remaining.len() < size {
+                return Err(format!("not enough data {}", remaining.len()));
+            }
+
+            Ok(ParserResult { parsed: a, remaining: &remaining[size..] })
         })
     }
 }
@@ -264,6 +280,21 @@ mod tests {
         let result = byte_parser(b'a').repeat(2..3).skip_to(2).parse(b"aaa")?;
         assert_eq!(vec![b'a', b'a'], result.parsed);
         assert_eq!(b"a", result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn skip_parser_failed_no_enough_input() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').skip(4).parse(b"abcd");
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn skip_parser_success() -> Result<(), Box<dyn Error>> {
+        let result = byte_parser(b'a').skip(3).parse(b"abcd")?;
+        assert_eq!(b'a', result.parsed);
+        assert!(result.remaining.is_empty());
         Ok(())
     }
 }

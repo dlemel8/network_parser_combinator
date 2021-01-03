@@ -31,10 +31,12 @@ fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
     })
 }
 
+type ExtensionLen = u16;
+
 #[derive(Debug, PartialEq)]
 pub enum TlsHandshakeProtocol<'a> {
     ClientHello(TlsVersion),
-    ServerHello(TlsVersion),
+    ServerHello(TlsVersion, ExtensionLen),
     Certificate,
     ServerKeyExchange,
     ServerHelloDone,
@@ -49,7 +51,11 @@ fn tls_client_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
 
 fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
     tls_version_parser()
-        .map(|version| { TlsHandshakeProtocol::ServerHello(version) })
+        .skip(32)   // random
+        .and(size_header_parser(1, true)) // session id
+        .skip(3)// cipher suite + compression method
+        .and(size_header_parser(2, true))
+        .map(|((version, _), size)| { TlsHandshakeProtocol::ServerHello(version, size as u16) })
 }
 
 fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
@@ -133,7 +139,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_handshake_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsHandshakeProtocol, TlsRecord};
+    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_handshake_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsHandshakeProtocol, TlsRecord, tls_server_hello_parser};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -181,6 +187,29 @@ mod tests {
         let result = tls_version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn server_hello_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
+        let mut input = [0;40];
+        input[0] = 3;
+        input[1] = 3;
+        input[39] = 3;
+        let result = tls_server_hello_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn server_hello_parser_on_valid_input_return_err() -> Result<(), Box<dyn Error>> {
+        let mut input = [0;45];
+        input[0] = 3;
+        input[1] = 3;
+        input[39] = 3;
+        let result = tls_server_hello_parser().parse(&input)?;
+        assert_eq!(TlsHandshakeProtocol::ServerHello("1.2".to_string(),  3), result.parsed);
+        assert_eq!([0; 2], result.remaining);
         Ok(())
     }
 
