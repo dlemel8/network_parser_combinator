@@ -2,7 +2,7 @@ use crate::general::{byte_parser, size_header_parser};
 use crate::parser::{one_of, Parser, ParserResult};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum TlsContentType {
+pub enum ContentType {
     ChangeCipherSpec,
     Alert,
     Handshake,
@@ -10,19 +10,19 @@ pub enum TlsContentType {
     Heartbeat,
 }
 
-fn tls_content_type_parser<'a>() -> impl Parser<'a, TlsContentType> {
+fn content_type_parser<'a>() -> impl Parser<'a, ContentType> {
     one_of(vec![
-        byte_parser(20).map(|_| { TlsContentType::ChangeCipherSpec }),
-        byte_parser(21).map(|_| { TlsContentType::Alert }),
-        byte_parser(22).map(|_| { TlsContentType::Handshake }),
-        byte_parser(23).map(|_| { TlsContentType::ApplicationData }),
-        byte_parser(24).map(|_| { TlsContentType::Heartbeat }),
+        byte_parser(20).map(|_| { ContentType::ChangeCipherSpec }),
+        byte_parser(21).map(|_| { ContentType::Alert }),
+        byte_parser(22).map(|_| { ContentType::Handshake }),
+        byte_parser(23).map(|_| { ContentType::ApplicationData }),
+        byte_parser(24).map(|_| { ContentType::Heartbeat }),
     ])
 }
 
-type TlsVersion = String;
+type Version = String;
 
-fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
+fn version_parser<'a>() -> impl Parser<'a, Version> {
     byte_parser(3).then(|_| {
         one_of(vec![
             byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
@@ -32,35 +32,35 @@ fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TlsExtensionType {
+pub enum ExtensionType {
     ExtendedMasterSecret,
     EcPointFormats,
     RenegotiationInfo,
 }
 
-fn tls_extension_type_parser<'a>() -> impl Parser<'a, TlsExtensionType> {
+fn extension_type_parser<'a>() -> impl Parser<'a, ExtensionType> {
     one_of(vec![
-        byte_parser(0).and(byte_parser(0x17)).map(|_| { TlsExtensionType::ExtendedMasterSecret }),
-        byte_parser(0).and(byte_parser(0xb)).map(|_| { TlsExtensionType::EcPointFormats }),
-        byte_parser(0xff).and(byte_parser(1)).map(|_| { TlsExtensionType::RenegotiationInfo }),
+        byte_parser(0).and(byte_parser(0x17)).map(|_| { ExtensionType::ExtendedMasterSecret }),
+        byte_parser(0).and(byte_parser(0xb)).map(|_| { ExtensionType::EcPointFormats }),
+        byte_parser(0xff).and(byte_parser(1)).map(|_| { ExtensionType::RenegotiationInfo }),
     ])
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TlsExtension {
-    pub type_: TlsExtensionType
+pub struct Extension {
+    pub type_: ExtensionType
 }
 
-fn tls_extension_parser<'a>() -> impl Parser<'a, TlsExtension> {
-    tls_extension_type_parser()
+fn extension_parser<'a>() -> impl Parser<'a, Extension> {
+    extension_type_parser()
         .and(size_header_parser(2, true))
-        .map(|(extension_type, _)| { TlsExtension { type_: extension_type } })
+        .map(|(extension_type, _)| { Extension { type_: extension_type } })
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TlsHandshakeProtocol<'a> {
-    ClientHello(TlsVersion),
-    ServerHello(TlsVersion, Vec<TlsExtension>),
+pub enum HandshakeProtocol<'a> {
+    ClientHello(Version),
+    ServerHello(Version, Vec<Extension>),
     Certificate,
     ServerKeyExchange,
     ServerHelloDone,
@@ -68,27 +68,27 @@ pub enum TlsHandshakeProtocol<'a> {
     Encrypted(&'a [u8]),
 }
 
-fn tls_client_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
-    tls_version_parser()
-        .map(|version| { TlsHandshakeProtocol::ClientHello(version) })
+fn client_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
+    version_parser()
+        .map(|version| { HandshakeProtocol::ClientHello(version) })
 }
 
-fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
-    tls_version_parser()
+fn server_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
+    version_parser()
         .skip(32)   // random
         .and(size_header_parser(1, true)) // session id
         .skip(3)// cipher suite + compression method
         .and(size_header_parser(2, false))
         .then(|((version, _), size)|
-            tls_extension_parser().repeat(..)
+            extension_parser().repeat(..)
                 .map(move |extensions| {
-                    TlsHandshakeProtocol::ServerHello(version.clone(), extensions)
+                    HandshakeProtocol::ServerHello(version.clone(), extensions)
                 })
                 .skip_to(size)
         )
 }
 
-fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
+fn handshake_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
     move |input: &'a [u8]| {
         if input.is_empty() {
             return Err("nothing to parse".to_string());
@@ -97,15 +97,15 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         one_of(vec![
             byte_parser(1)
                 .and(size_header_parser(3, false))
-                .then(|(_, size)| tls_client_hello_parser().skip_to(size)),
+                .then(|(_, size)| client_hello_parser().skip_to(size)),
             byte_parser(2)
                 .and(size_header_parser(3, false))
-                .then(|(_, size)| tls_server_hello_parser().skip_to(size)),
+                .then(|(_, size)| server_hello_parser().skip_to(size)),
             one_of(vec![
-                byte_parser(11).map(|_| { TlsHandshakeProtocol::Certificate }),
-                byte_parser(12).map(|_| { TlsHandshakeProtocol::ServerKeyExchange }),
-                byte_parser(14).map(|_| { TlsHandshakeProtocol::ServerHelloDone }),
-                byte_parser(16).map(|_| { TlsHandshakeProtocol::ClientKeyExchange }),
+                byte_parser(11).map(|_| { HandshakeProtocol::Certificate }),
+                byte_parser(12).map(|_| { HandshakeProtocol::ServerKeyExchange }),
+                byte_parser(14).map(|_| { HandshakeProtocol::ServerHelloDone }),
+                byte_parser(16).map(|_| { HandshakeProtocol::ClientKeyExchange }),
             ])
                 .and(size_header_parser(3, true))
                 .map(|(handshake, _)| { handshake }),
@@ -113,7 +113,7 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
             .parse(&input)
             .or_else(|_| {
                 Ok(ParserResult {
-                    parsed: TlsHandshakeProtocol::Encrypted(&input),
+                    parsed: HandshakeProtocol::Encrypted(&input),
                     remaining: &input[input.len()..],
                 })
             })
@@ -121,25 +121,25 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum TlsData<'a> {
-    HandshakeProtocol(TlsHandshakeProtocol<'a>),
+pub enum Data<'a> {
+    HandshakeProtocol(HandshakeProtocol<'a>),
     ChangeCipherSpec,
     Encrypted(&'a [u8]),
 }
 
-fn tls_data_parser<'a>(content_type: TlsContentType) -> impl Parser<'a, TlsData<'a>> {
+fn data_parser<'a>(content_type: ContentType) -> impl Parser<'a, Data<'a>> {
     move |input: &'a [u8]| {
         match content_type {
-            TlsContentType::ChangeCipherSpec =>
+            ContentType::ChangeCipherSpec =>
                 byte_parser(1)
-                    .map(|_| { TlsData::ChangeCipherSpec })
+                    .map(|_| { Data::ChangeCipherSpec })
                     .parse(&input),
-            TlsContentType::Handshake =>
-                tls_handshake_parser()
-                    .map(|handshake| { TlsData::HandshakeProtocol(handshake) })
+            ContentType::Handshake =>
+                handshake_parser()
+                    .map(|handshake| { Data::HandshakeProtocol(handshake) })
                     .parse(&input),
             _ => Ok(ParserResult {
-                parsed: TlsData::Encrypted(&input),
+                parsed: Data::Encrypted(&input),
                 remaining: &input[input.len()..],
             })
         }
@@ -147,19 +147,19 @@ fn tls_data_parser<'a>(content_type: TlsContentType) -> impl Parser<'a, TlsData<
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TlsRecord<'a> {
-    pub content_type: TlsContentType,
+pub struct Record<'a> {
+    pub content_type: ContentType,
     pub version: String,
-    pub data: TlsData<'a>,
+    pub data: Data<'a>,
 }
 
-pub fn tls_record_parser<'a>() -> impl Parser<'a, TlsRecord<'a>> {
-    tls_content_type_parser()
-        .and(tls_version_parser())
+pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
+    content_type_parser()
+        .and(version_parser())
         .and(size_header_parser(2, false))
         .then(|((content_type, version), size)| {
-            tls_data_parser(content_type)
-                .map(move |data| { TlsRecord { content_type, version: version.clone(), data } })
+            data_parser(content_type)
+                .map(move |data| { Record { content_type, version: version.clone(), data } })
                 .skip_to(size)
         })
 }
@@ -169,11 +169,11 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_handshake_parser, tls_record_parser, tls_server_hello_parser, tls_version_parser, TlsContentType, TlsData, TlsExtension, TlsExtensionType, TlsHandshakeProtocol, TlsRecord};
+    use crate::tls;
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = tls_content_type_parser().parse(b"");
+        let result = tls::content_type_parser().parse(b"");
         assert!(result.is_err());
         Ok(())
     }
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn content_type_parser_on_input_with_unknown_value_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 3];
-        let result = tls_content_type_parser().parse(&input);
+        let result = tls::content_type_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -189,8 +189,8 @@ mod tests {
     #[test]
     fn content_type_parser_on_input_with_known_value_return_content_type() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [22, 2, 3];
-        let result = tls_content_type_parser().parse(&input)?;
-        assert_eq!(TlsContentType::Handshake, result.parsed);
+        let result = tls::content_type_parser().parse(&input)?;
+        assert_eq!(tls::ContentType::Handshake, result.parsed);
         assert_eq!([2, 3], result.remaining);
         Ok(())
     }
@@ -198,7 +198,7 @@ mod tests {
     #[test]
     fn version_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 1] = [1];
-        let result = tls_version_parser().parse(&input);
+        let result = tls::version_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn version_parser_on_input_with_unknown_value_return_version() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 7];
-        let result = tls_version_parser().parse(&input);
+        let result = tls::version_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -214,7 +214,7 @@ mod tests {
     #[test]
     fn version_parser_on_input_with_known_value_return_it() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [3, 3, 7];
-        let result = tls_version_parser().parse(&input)?;
+        let result = tls::version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
         Ok(())
@@ -226,7 +226,7 @@ mod tests {
         input[0] = 3;
         input[1] = 3;
         input[39] = 3;
-        let result = tls_server_hello_parser().parse(&input);
+        let result = tls::server_hello_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -237,9 +237,9 @@ mod tests {
         input[0] = 3;
         input[1] = 3;
         input[39] = 3;
-        let empty: Vec<TlsExtension> = vec![];
-        let result = tls_server_hello_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::ServerHello("1.2".to_string(), empty), result.parsed);
+        let empty: Vec<tls::Extension> = vec![];
+        let result = tls::server_hello_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::ServerHello("1.2".to_string(), empty), result.parsed);
         assert_eq!([0; 2], result.remaining);
         Ok(())
     }
@@ -251,10 +251,10 @@ mod tests {
         input[1] = 3;
         input[39] = 4;
         input[41] = 0x17;
-        let result = tls_server_hello_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::ServerHello(
+        let result = tls::server_hello_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::ServerHello(
             "1.2".to_string(),
-            vec![TlsExtension { type_: TlsExtensionType::ExtendedMasterSecret }],
+            vec![tls::Extension { type_: tls::ExtensionType::ExtendedMasterSecret }],
         ), result.parsed);
         assert_eq!([0; 2], result.remaining);
         Ok(())
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn handshake_parser_on_not_empty_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = tls_handshake_parser().parse(b"");
+        let result = tls::handshake_parser().parse(b"");
         assert!(result.is_err());
         Ok(())
     }
@@ -270,8 +270,8 @@ mod tests {
     #[test]
     fn handshake_parser_on_input_with_unknown_type_return_encrypted_handshake() -> Result<(), Box<dyn Error>> {
         let input: [u8; 4] = [88, 1, 3, 4];
-        let result = tls_handshake_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::Encrypted(&[88, 1, 3, 4]), result.parsed);
+        let result = tls::handshake_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::Encrypted(&[88, 1, 3, 4]), result.parsed);
         assert!(result.remaining.is_empty());
         Ok(())
     }
@@ -279,8 +279,8 @@ mod tests {
     #[test]
     fn handshake_parser_on_input_with_known_type_return_specific_handshake() -> Result<(), Box<dyn Error>> {
         let input: [u8; 7] = [12, 0, 0, 1, 1, 3, 4];
-        let result = tls_handshake_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::ServerKeyExchange, result.parsed);
+        let result = tls::handshake_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::ServerKeyExchange, result.parsed);
         assert_eq!([3, 4], result.remaining);
         Ok(())
     }
@@ -288,22 +288,22 @@ mod tests {
     #[test]
     fn data_parser_on_encrypted_content_type_return_data_with_all_input() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [3, 3, 7];
-        let result = tls_data_parser(TlsContentType::Heartbeat).parse(&input)?;
-        assert_eq!(TlsData::Encrypted(&input), result.parsed);
+        let result = tls::data_parser(tls::ContentType::Heartbeat).parse(&input)?;
+        assert_eq!(tls::Data::Encrypted(&input), result.parsed);
         assert!(result.remaining.is_empty());
         Ok(())
     }
 
     #[test]
     fn data_parser_on_change_cipher_spec_content_type_and_empty_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(b"");
+        let result = tls::data_parser(tls::ContentType::ChangeCipherSpec).parse(b"");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn data_parser_on_change_cipher_spec_content_type_and_invalid_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(b"a");
+        let result = tls::data_parser(tls::ContentType::ChangeCipherSpec).parse(b"a");
         assert!(result.is_err());
         Ok(())
     }
@@ -311,15 +311,15 @@ mod tests {
     #[test]
     fn data_parser_on_change_cipher_spec_content_type_and_valid_input_return_data() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 3];
-        let result = tls_data_parser(TlsContentType::ChangeCipherSpec).parse(&input)?;
-        assert_eq!(TlsData::ChangeCipherSpec, result.parsed);
+        let result = tls::data_parser(tls::ContentType::ChangeCipherSpec).parse(&input)?;
+        assert_eq!(tls::Data::ChangeCipherSpec, result.parsed);
         assert_eq!([2, 3], result.remaining);
         Ok(())
     }
 
     #[test]
     fn data_parser_on_handshake_content_type_and_invalid_input_return_err() -> Result<(), Box<dyn Error>> {
-        let result = tls_data_parser(TlsContentType::Handshake).parse(b"");
+        let result = tls::data_parser(tls::ContentType::Handshake).parse(b"");
         assert!(result.is_err());
         Ok(())
     }
@@ -327,8 +327,8 @@ mod tests {
     #[test]
     fn data_parser_on_handshake_content_type_and_valid_input_return_data() -> Result<(), Box<dyn Error>> {
         let input: [u8; 7] = [16, 0, 0, 1, 1, 2, 3];
-        let result = tls_data_parser(TlsContentType::Handshake).parse(&input)?;
-        assert_eq!(TlsData::HandshakeProtocol(TlsHandshakeProtocol::ClientKeyExchange), result.parsed);
+        let result = tls::data_parser(tls::ContentType::Handshake).parse(&input)?;
+        assert_eq!(tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ClientKeyExchange), result.parsed);
         assert_eq!([2, 3], result.remaining);
         Ok(())
     }
@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn record_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 9] = [23, 3, 2, 0, 10, 100, 5, 14, 2];
-        let result = tls_record_parser().parse(&input);
+        let result = tls::record_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -344,7 +344,7 @@ mod tests {
     #[test]
     fn record_parser_on_invalid_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 9] = [23, 3, 100, 0, 2, 100, 5, 14, 2];
-        let result = tls_record_parser().parse(&input);
+        let result = tls::record_parser().parse(&input);
         assert!(result.is_err());
         Ok(())
     }
@@ -352,11 +352,11 @@ mod tests {
     #[test]
     fn record_parser_on_valid_application_input_return_record() -> Result<(), Box<dyn Error>> {
         let input: [u8; 9] = [23, 3, 2, 0, 2, 100, 5, 14, 2];
-        let result = tls_record_parser().parse(&input)?;
-        let expected = TlsRecord {
-            content_type: TlsContentType::ApplicationData,
+        let result = tls::record_parser().parse(&input)?;
+        let expected = tls::Record {
+            content_type: tls::ContentType::ApplicationData,
             version: "1.1".to_string(),
-            data: TlsData::Encrypted(&[100, 5]),
+            data: tls::Data::Encrypted(&[100, 5]),
         };
         assert_eq!(expected, result.parsed);
         assert_eq!([14, 2], result.remaining);
@@ -366,11 +366,11 @@ mod tests {
     #[test]
     fn record_parser_on_valid_change_cipher_spec_input_return_record() -> Result<(), Box<dyn Error>> {
         let input: [u8; 9] = [20, 3, 1, 0, 1, 1, 5, 14, 2];
-        let result = tls_record_parser().parse(&input)?;
-        let expected = TlsRecord {
-            content_type: TlsContentType::ChangeCipherSpec,
+        let result = tls::record_parser().parse(&input)?;
+        let expected = tls::Record {
+            content_type: tls::ContentType::ChangeCipherSpec,
             version: "1.0".to_string(),
-            data: TlsData::ChangeCipherSpec,
+            data: tls::Data::ChangeCipherSpec,
         };
         assert_eq!(expected, result.parsed);
         assert_eq!([5, 14, 2], result.remaining);

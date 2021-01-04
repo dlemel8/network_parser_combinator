@@ -1,7 +1,7 @@
 use std::error::Error;
 
-use network_parser_combinator::tls::{TlsContentType, TlsData, TlsRecord, TlsHandshakeProtocol, tls_record_parser, TlsExtension, TlsExtensionType};
 use network_parser_combinator::parser::Parser;
+use network_parser_combinator::tls;
 
 // TLS 1.2 session payloads
 static CLIENT_START_OF_HANDSHAKE_PAYLOAD: &str = "1603010087010000830303ab85fc5f6db67c9cf825cd8a1f34cf6c5e89ec09656a4944ec5536a36aed5728000004cca900ff0100005600000010000e00000b31302e34322e302e323433000b000403000102000a000a0008001d001700190018000d0020001e0403050306030804080508060401050106010203020102020402050206020016000000170000";
@@ -14,14 +14,14 @@ static ENCRYPTED_ALERT: &str = "15030300129a6ccaf17f9b90b07284170435c3e565cdff";
 #[test]
 fn tls_parser_client_start_of_handshake() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(CLIENT_START_OF_HANDSHAKE_PAYLOAD).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(1..2);
+    let parser = tls::record_parser().repeat(1..2);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.0".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ClientHello("1.2".to_string())),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ClientHello("1.2".to_string())),
         }
     ], records.parsed);
     Ok(())
@@ -30,36 +30,36 @@ fn tls_parser_client_start_of_handshake() -> Result<(), Box<dyn Error>> {
 #[test]
 fn tls_parser_server_start_of_handshake() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(SERVER_START_OF_HANDSHAKE_PAYLOAD).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(4..5);
+    let parser = tls::record_parser().repeat(4..5);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerHello(
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHello(
                 "1.2".to_string(),
                 vec![
-                    TlsExtension{ type_: TlsExtensionType::RenegotiationInfo },
-                    TlsExtension{ type_: TlsExtensionType::EcPointFormats },
-                    TlsExtension{ type_: TlsExtensionType::ExtendedMasterSecret }
+                    tls::Extension { type_: tls::ExtensionType::RenegotiationInfo },
+                    tls::Extension { type_: tls::ExtensionType::EcPointFormats },
+                    tls::Extension { type_: tls::ExtensionType::ExtendedMasterSecret }
                 ],
             ))
         },
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::Certificate)
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::Certificate)
         },
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerKeyExchange)
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerKeyExchange)
         },
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerHelloDone) ,
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHelloDone) ,
         }
     ], records.parsed);
     Ok(())
@@ -68,24 +68,24 @@ fn tls_parser_server_start_of_handshake() -> Result<(), Box<dyn Error>> {
 #[test]
 fn tls_parser_client_end_of_handshake() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(CLIENT_END_OF_HANDSHAKE_PAYLOAD).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(3..4);
+    let parser = tls::record_parser().repeat(3..4);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ClientKeyExchange),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ClientKeyExchange),
         },
-        TlsRecord {
-            content_type: TlsContentType::ChangeCipherSpec,
+        tls::Record {
+            content_type: tls::ContentType::ChangeCipherSpec,
             version: "1.2".to_string(),
-            data: TlsData::ChangeCipherSpec,
+            data: tls::Data::ChangeCipherSpec,
         },
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::Encrypted(&[142, 96, 65, 8, 59, 137, 255, 73, 208, 104, 236, 47, 115, 93, 157, 216, 218, 14, 40, 107, 95, 155, 132, 177, 53, 190, 14, 76, 245, 56, 196, 9])),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::Encrypted(&[142, 96, 65, 8, 59, 137, 255, 73, 208, 104, 236, 47, 115, 93, 157, 216, 218, 14, 40, 107, 95, 155, 132, 177, 53, 190, 14, 76, 245, 56, 196, 9])),
         }
     ], records.parsed);
     Ok(())
@@ -94,19 +94,19 @@ fn tls_parser_client_end_of_handshake() -> Result<(), Box<dyn Error>> {
 #[test]
 fn tls_parser_server_end_of_handshake() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(SERVER_END_OF_HANDSHAKE_PAYLOAD).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(2..3);
+    let parser = tls::record_parser().repeat(2..3);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::ChangeCipherSpec,
+        tls::Record {
+            content_type: tls::ContentType::ChangeCipherSpec,
             version: "1.2".to_string(),
-            data: TlsData::ChangeCipherSpec,
+            data: tls::Data::ChangeCipherSpec,
         },
-        TlsRecord {
-            content_type: TlsContentType::Handshake,
+        tls::Record {
+            content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::Encrypted(&[181, 171, 238, 78, 113, 177, 223, 212, 113, 227, 44, 39, 157, 143, 37, 216, 34, 121, 197, 8, 39, 7, 214, 227, 57, 146, 236, 148, 137, 58, 242, 189])),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::Encrypted(&[181, 171, 238, 78, 113, 177, 223, 212, 113, 227, 44, 39, 157, 143, 37, 216, 34, 121, 197, 8, 39, 7, 214, 227, 57, 146, 236, 148, 137, 58, 242, 189])),
         }
     ], records.parsed);
     Ok(())
@@ -115,14 +115,14 @@ fn tls_parser_server_end_of_handshake() -> Result<(), Box<dyn Error>> {
 #[test]
 fn tls_parser_encrypted_application_data() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(ENCRYPTED_APPLICATION_DATA).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(1..2);
+    let parser = tls::record_parser().repeat(1..2);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::ApplicationData,
+        tls::Record {
+            content_type: tls::ContentType::ApplicationData,
             version: "1.2".to_string(),
-            data: TlsData::Encrypted(&[87, 100, 221, 126, 25, 88, 50, 86, 62, 43, 162, 6, 231, 115, 182, 131, 72, 30, 108, 86, 28, 61, 180, 236, 51, 232, 241, 215, 222, 237, 245, 213, 91, 89, 34, 131, 160, 38, 255, 121, 57, 207, 93, 104, 72, 32, 123, 214, 82, 241, 203]),
+            data: tls::Data::Encrypted(&[87, 100, 221, 126, 25, 88, 50, 86, 62, 43, 162, 6, 231, 115, 182, 131, 72, 30, 108, 86, 28, 61, 180, 236, 51, 232, 241, 215, 222, 237, 245, 213, 91, 89, 34, 131, 160, 38, 255, 121, 57, 207, 93, 104, 72, 32, 123, 214, 82, 241, 203]),
         }
     ], records.parsed);
     Ok(())
@@ -131,14 +131,14 @@ fn tls_parser_encrypted_application_data() -> Result<(), Box<dyn Error>> {
 #[test]
 fn tls_parser_encrypted_alert() -> Result<(), Box<dyn Error>> {
     let payload = hex::decode(ENCRYPTED_ALERT).expect("failed to decode payload");
-    let parser = tls_record_parser().repeat(1..2);
+    let parser = tls::record_parser().repeat(1..2);
     let records = parser.parse(payload.as_slice())?;
     assert!(records.remaining.is_empty());
     assert_eq!(vec![
-        TlsRecord {
-            content_type: TlsContentType::Alert,
+        tls::Record {
+            content_type: tls::ContentType::Alert,
             version: "1.2".to_string(),
-            data: TlsData::Encrypted(&[154, 108, 202, 241, 127, 155, 144, 176, 114, 132, 23, 4, 53, 195, 229, 101, 205, 255]),
+            data: tls::Data::Encrypted(&[154, 108, 202, 241, 127, 155, 144, 176, 114, 132, 23, 4, 53, 195, 229, 101, 205, 255]),
         }
     ], records.parsed);
     Ok(())
