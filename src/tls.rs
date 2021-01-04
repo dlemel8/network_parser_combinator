@@ -31,12 +31,36 @@ fn tls_version_parser<'a>() -> impl Parser<'a, TlsVersion> {
     })
 }
 
-type ExtensionLen = u16;
+#[derive(Debug, PartialEq)]
+pub enum TlsExtensionType {
+    ExtendedMasterSecret,
+    EcPointFormats,
+    RenegotiationInfo,
+}
+
+fn tls_extension_type_parser<'a>() -> impl Parser<'a, TlsExtensionType> {
+    one_of(vec![
+        byte_parser(0).and(byte_parser(0x17)).map(|_| { TlsExtensionType::ExtendedMasterSecret }),
+        byte_parser(0).and(byte_parser(0xb)).map(|_| { TlsExtensionType::EcPointFormats }),
+        byte_parser(0xff).and(byte_parser(1)).map(|_| { TlsExtensionType::RenegotiationInfo }),
+    ])
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TlsExtension {
+    pub type_: TlsExtensionType
+}
+
+fn tls_extension_parser<'a>() -> impl Parser<'a, TlsExtension> {
+    tls_extension_type_parser()
+        .and(size_header_parser(2, true))
+        .map(|(extension_type, _)| { TlsExtension { type_: extension_type } })
+}
 
 #[derive(Debug, PartialEq)]
 pub enum TlsHandshakeProtocol<'a> {
     ClientHello(TlsVersion),
-    ServerHello(TlsVersion, ExtensionLen),
+    ServerHello(TlsVersion, Vec<TlsExtension>),
     Certificate,
     ServerKeyExchange,
     ServerHelloDone,
@@ -54,8 +78,14 @@ fn tls_server_hello_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
         .skip(32)   // random
         .and(size_header_parser(1, true)) // session id
         .skip(3)// cipher suite + compression method
-        .and(size_header_parser(2, true))
-        .map(|((version, _), size)| { TlsHandshakeProtocol::ServerHello(version, size as u16) })
+        .and(size_header_parser(2, false))
+        .then(|((version, _), size)|
+            tls_extension_parser().repeat(..)
+                .map(move |extensions| {
+                    TlsHandshakeProtocol::ServerHello(version.clone(), extensions)
+                })
+                .skip_to(size)
+        )
 }
 
 fn tls_handshake_parser<'a>() -> impl Parser<'a, TlsHandshakeProtocol<'a>> {
@@ -139,7 +169,7 @@ mod tests {
     use std::error::Error;
 
     use crate::parser::Parser;
-    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_handshake_parser, tls_record_parser, tls_version_parser, TlsContentType, TlsData, TlsHandshakeProtocol, TlsRecord, tls_server_hello_parser};
+    use crate::tls::{tls_content_type_parser, tls_data_parser, tls_handshake_parser, tls_record_parser, tls_server_hello_parser, tls_version_parser, TlsContentType, TlsData, TlsExtension, TlsExtensionType, TlsHandshakeProtocol, TlsRecord};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -192,7 +222,7 @@ mod tests {
 
     #[test]
     fn server_hello_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
-        let mut input = [0;40];
+        let mut input = [0; 40];
         input[0] = 3;
         input[1] = 3;
         input[39] = 3;
@@ -202,13 +232,30 @@ mod tests {
     }
 
     #[test]
-    fn server_hello_parser_on_valid_input_return_err() -> Result<(), Box<dyn Error>> {
-        let mut input = [0;45];
+    fn server_hello_parser_on_valid_no_extension_input_return_handshake() -> Result<(), Box<dyn Error>> {
+        let mut input = [0; 45];
         input[0] = 3;
         input[1] = 3;
         input[39] = 3;
+        let empty: Vec<TlsExtension> = vec![];
         let result = tls_server_hello_parser().parse(&input)?;
-        assert_eq!(TlsHandshakeProtocol::ServerHello("1.2".to_string(),  3), result.parsed);
+        assert_eq!(TlsHandshakeProtocol::ServerHello("1.2".to_string(), empty), result.parsed);
+        assert_eq!([0; 2], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn server_hello_parser_on_valid_with_extension_input_return_handshake() -> Result<(), Box<dyn Error>> {
+        let mut input = [0; 46];
+        input[0] = 3;
+        input[1] = 3;
+        input[39] = 4;
+        input[41] = 0x17;
+        let result = tls_server_hello_parser().parse(&input)?;
+        assert_eq!(TlsHandshakeProtocol::ServerHello(
+            "1.2".to_string(),
+            vec![TlsExtension { type_: TlsExtensionType::ExtendedMasterSecret }],
+        ), result.parsed);
         assert_eq!([0; 2], result.remaining);
         Ok(())
     }

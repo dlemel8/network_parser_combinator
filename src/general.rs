@@ -27,12 +27,13 @@ pub fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> imp
             return Err(format!("not enough data {}", input.len()));
         }
 
-        if consume {
-            Ok(ParserResult { parsed: size, remaining: &input[end_offset..] })
+        let new_input = if consume {
+            &input[end_offset..]
         } else {
-            Ok(ParserResult { parsed: size, remaining: &input[header_size_in_bytes..] })
-        }
+            &input[header_size_in_bytes..]
+        };
 
+        Ok(ParserResult { parsed: size, remaining: new_input })
     }
 }
 

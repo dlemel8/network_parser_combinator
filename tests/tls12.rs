@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use network_parser_combinator::tls::{TlsContentType, TlsData, TlsRecord, TlsHandshakeProtocol, tls_record_parser};
+use network_parser_combinator::tls::{TlsContentType, TlsData, TlsRecord, TlsHandshakeProtocol, tls_record_parser, TlsExtension, TlsExtensionType};
 use network_parser_combinator::parser::Parser;
 
 // TLS 1.2 session payloads
@@ -39,7 +39,11 @@ fn tls_parser_server_start_of_handshake() -> Result<(), Box<dyn Error>> {
             version: "1.2".to_string(),
             data: TlsData::HandshakeProtocol(TlsHandshakeProtocol::ServerHello(
                 "1.2".to_string(),
-                17,
+                vec![
+                    TlsExtension{ type_: TlsExtensionType::RenegotiationInfo },
+                    TlsExtension{ type_: TlsExtensionType::EcPointFormats },
+                    TlsExtension{ type_: TlsExtensionType::ExtendedMasterSecret }
+                ],
             ))
         },
         TlsRecord {
