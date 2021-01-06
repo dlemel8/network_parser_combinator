@@ -33,15 +33,67 @@ fn version_parser<'a>() -> impl Parser<'a, Version> {
 
 #[derive(Debug, PartialEq)]
 pub enum ExtensionType {
-    ExtendedMasterSecret,
+    ServerName,
+    MaxFragmentLength,
+    ClientCertificate,
+    TrustedCaKeys,
+    TruncatedHMac,
+    StatusRequest,
+    UserMapping,
+    ClientAuthz,
+    ServerAuthz,
+    CertType,
+    SupportedGroups,
     EcPointFormats,
+    Srp,
+    SignatureAlgorithms,
+    UseSrtp,
+    Heartbeat,
+    ApplicationLayerProtocolNegotiation,
+    StatusRequestV2,
+    SignedCertificateTimestamp,
+    ClientCertificateType,
+    ServerCertificateType,
+    Padding,
+    EncryptThenMac,
+    ExtendedMasterSecret,
+    TokenBinding,
+    CachedInfo,
+    RecordSizeLimit,
+    SessionTicketTLS,
     RenegotiationInfo,
 }
 
 fn extension_type_parser<'a>() -> impl Parser<'a, ExtensionType> {
     one_of(vec![
-        byte_parser(0).and(byte_parser(0x17)).map(|_| { ExtensionType::ExtendedMasterSecret }),
+        byte_parser(0).and(byte_parser(0)).map(|_| { ExtensionType::ServerName }),
+        byte_parser(0).and(byte_parser(1)).map(|_| { ExtensionType::MaxFragmentLength }),
+        byte_parser(0).and(byte_parser(2)).map(|_| { ExtensionType::ClientCertificate }),
+        byte_parser(0).and(byte_parser(3)).map(|_| { ExtensionType::TrustedCaKeys }),
+        byte_parser(0).and(byte_parser(4)).map(|_| { ExtensionType::TruncatedHMac }),
+        byte_parser(0).and(byte_parser(5)).map(|_| { ExtensionType::StatusRequest }),
+        byte_parser(0).and(byte_parser(6)).map(|_| { ExtensionType::UserMapping }),
+        byte_parser(0).and(byte_parser(7)).map(|_| { ExtensionType::ClientAuthz }),
+        byte_parser(0).and(byte_parser(8)).map(|_| { ExtensionType::ServerAuthz }),
+        byte_parser(0).and(byte_parser(9)).map(|_| { ExtensionType::CertType }),
+        byte_parser(0).and(byte_parser(0xa)).map(|_| { ExtensionType::SupportedGroups }),
         byte_parser(0).and(byte_parser(0xb)).map(|_| { ExtensionType::EcPointFormats }),
+        byte_parser(0).and(byte_parser(0xc)).map(|_| { ExtensionType::Srp }),
+        byte_parser(0).and(byte_parser(0xd)).map(|_| { ExtensionType::SignatureAlgorithms }),
+        byte_parser(0).and(byte_parser(0xe)).map(|_| { ExtensionType::UseSrtp }),
+        byte_parser(0).and(byte_parser(0xf)).map(|_| { ExtensionType::Heartbeat }),
+        byte_parser(0).and(byte_parser(0x10)).map(|_| { ExtensionType::ApplicationLayerProtocolNegotiation }),
+        byte_parser(0).and(byte_parser(0x11)).map(|_| { ExtensionType::StatusRequestV2 }),
+        byte_parser(0).and(byte_parser(0x12)).map(|_| { ExtensionType::SignedCertificateTimestamp }),
+        byte_parser(0).and(byte_parser(0x13)).map(|_| { ExtensionType::ClientCertificateType }),
+        byte_parser(0).and(byte_parser(0x14)).map(|_| { ExtensionType::ServerCertificateType }),
+        byte_parser(0).and(byte_parser(0x15)).map(|_| { ExtensionType::Padding }),
+        byte_parser(0).and(byte_parser(0x16)).map(|_| { ExtensionType::EncryptThenMac }),
+        byte_parser(0).and(byte_parser(0x17)).map(|_| { ExtensionType::ExtendedMasterSecret }),
+        byte_parser(0).and(byte_parser(0x18)).map(|_| { ExtensionType::TokenBinding }),
+        byte_parser(0).and(byte_parser(0x19)).map(|_| { ExtensionType::CachedInfo }),
+        byte_parser(0).and(byte_parser(0x1c)).map(|_| { ExtensionType::RecordSizeLimit }),
+        byte_parser(0).and(byte_parser(0x23)).map(|_| { ExtensionType::SessionTicketTLS }),
         byte_parser(0xff).and(byte_parser(1)).map(|_| { ExtensionType::RenegotiationInfo }),
     ])
 }
@@ -57,9 +109,12 @@ fn extension_parser<'a>() -> impl Parser<'a, Extension> {
         .map(|(extension_type, _)| { Extension { type_: extension_type } })
 }
 
+type CipherSuitesCount = usize;
+type CompressionMethodsCount = usize;
+
 #[derive(Debug, PartialEq)]
 pub enum HandshakeProtocol<'a> {
-    ClientHello(Version),
+    ClientHello(Version, CipherSuitesCount, CompressionMethodsCount, Vec<Extension>),
     ServerHello(Version, Vec<Extension>),
     Certificate,
     ServerKeyExchange,
@@ -70,7 +125,18 @@ pub enum HandshakeProtocol<'a> {
 
 fn client_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
     version_parser()
-        .map(|version| { HandshakeProtocol::ClientHello(version) })
+        .skip(32)// random
+        .and(size_header_parser(1, true)) // session id
+        .and(size_header_parser(2, true)) // cipher suites
+        .and(size_header_parser(1, true)) // compression methods
+        .and(size_header_parser(2, false))// extensions
+        .then(|((((version, _), size1), size2), size3)|
+            extension_parser().repeat(..=size3)
+                .map(move |extensions| {
+                    HandshakeProtocol::ClientHello(version.clone(), size1 / 2, size2, extensions)
+                })
+                .skip_to(size3)
+        )
 }
 
 fn server_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
@@ -78,12 +144,10 @@ fn server_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
         .skip(32)   // random
         .and(size_header_parser(1, true)) // session id
         .skip(3)// cipher suite + compression method
-        .and(size_header_parser(2, false))
+        .and(size_header_parser(2, false))// extensions
         .then(|((version, _), size)|
-            extension_parser().repeat(..)
-                .map(move |extensions| {
-                    HandshakeProtocol::ServerHello(version.clone(), extensions)
-                })
+            extension_parser().repeat(..=size)
+                .map(move |extensions| { HandshakeProtocol::ServerHello(version.clone(), extensions) })
                 .skip_to(size)
         )
 }
@@ -217,6 +281,80 @@ mod tests {
         let result = tls::version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
         assert_eq!([7], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn extension_type_parser_on_input_with_unknown_value_return_err() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [1, 2, 3];
+        let result = tls::extension_type_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn extension_type_parser_on_input_with_known_value_return_extension_type() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [0, 0x18, 3];
+        let result = tls::extension_type_parser().parse(&input)?;
+        assert_eq!(tls::ExtensionType::TokenBinding, result.parsed);
+        assert_eq!([3], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn extension_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [0, 8, 3];
+        let result = tls::extension_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn extension_parser_on_input_with_known_value_return_content_type() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 7] = [0, 8, 0, 1, 1, 2, 3];
+        let result = tls::extension_parser().parse(&input)?;
+        assert_eq!(tls::Extension { type_: tls::ExtensionType::ServerAuthz }, result.parsed);
+        assert_eq!([2, 3], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn client_hello_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
+        let mut input = [0; 40];
+        input[0] = 3;
+        input[1] = 3;
+        input[39] = 3;
+        let result = tls::client_hello_parser().parse(&input);
+        assert!(result.is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn client_hello_parser_on_valid_no_extension_input_return_handshake() -> Result<(), Box<dyn Error>> {
+        let mut input = [0; 40];
+        input[0] = 3;
+        input[1] = 3;
+        let empty: Vec<tls::Extension> = vec![];
+        let result = tls::client_hello_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::ClientHello("1.2".to_string(), 0, 0, empty), result.parsed);
+        assert!(result.remaining.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn client_hello_parser_on_valid_with_extension_input_return_handshake() -> Result<(), Box<dyn Error>> {
+        let mut input = [0; 50];
+        input[0] = 3;
+        input[1] = 3;
+        input[36] = 2;
+        input[39] = 2;
+        input[43] = 4;
+        let result = tls::client_hello_parser().parse(&input)?;
+        assert_eq!(tls::HandshakeProtocol::ClientHello(
+            "1.2".to_string(), 1, 2,
+            vec![tls::Extension { type_: tls::ExtensionType::ServerName }],
+        ), result.parsed);
+        assert_eq!([0;2], result.remaining);
         Ok(())
     }
 

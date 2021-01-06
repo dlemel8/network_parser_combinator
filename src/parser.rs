@@ -123,19 +123,19 @@ fn repeat<'a, T: 'a>(p: impl Parser<'a, T>, times: impl RangeBounds<usize> + 'a)
             _ => usize::MAX,
         };
 
-        let mut records = vec![];
+        let mut results = vec![];
         let mut internal_input = input;
         while let Ok(result) = p.parse(internal_input) {
-            records.push(result.parsed);
+            results.push(result.parsed);
             internal_input = result.remaining;
-            if limit == records.len() {
+            if limit == results.len() {
                 break;
             }
         }
 
         match times.start_bound() {
-            Bound::Included(&x) if x > records.len() => Err(format!("want at least {}, found {}", x, records.len())),
-            _ => Ok(ParserResult { parsed: records, remaining: internal_input })
+            Bound::Included(&x) if x > results.len() => Err(format!("want at least {}, found {}", x, results.len())),
+            _ => Ok(ParserResult { parsed: results, remaining: internal_input })
         }
     }
 }

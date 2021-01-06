@@ -21,7 +21,19 @@ fn tls_parser_client_start_of_handshake() -> Result<(), Box<dyn Error>> {
         tls::Record {
             content_type: tls::ContentType::Handshake,
             version: "1.0".to_string(),
-            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ClientHello("1.2".to_string())),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ClientHello(
+                "1.2".to_string(),
+                2,
+                1,
+                vec![
+                    tls::Extension { type_: tls::ExtensionType::ServerName },
+                    tls::Extension { type_: tls::ExtensionType::EcPointFormats },
+                    tls::Extension { type_: tls::ExtensionType::SupportedGroups },
+                    tls::Extension { type_: tls::ExtensionType::SignatureAlgorithms },
+                    tls::Extension { type_: tls::ExtensionType::EncryptThenMac },
+                    tls::Extension { type_: tls::ExtensionType::ExtendedMasterSecret },
+                ]
+            )),
         }
     ], records.parsed);
     Ok(())
