@@ -61,6 +61,9 @@ pub enum ExtensionType {
     CachedInfo,
     RecordSizeLimit,
     SessionTicketTLS,
+    SupportedVersions,
+    PskExchangeModes,
+    KeyShare,
     RenegotiationInfo,
 }
 
@@ -94,6 +97,9 @@ fn extension_type_parser<'a>() -> impl Parser<'a, ExtensionType> {
         byte_parser(0).and(byte_parser(0x19)).map(|_| { ExtensionType::CachedInfo }),
         byte_parser(0).and(byte_parser(0x1c)).map(|_| { ExtensionType::RecordSizeLimit }),
         byte_parser(0).and(byte_parser(0x23)).map(|_| { ExtensionType::SessionTicketTLS }),
+        byte_parser(0).and(byte_parser(0x2b)).map(|_| { ExtensionType::SupportedVersions }),
+        byte_parser(0).and(byte_parser(0x2d)).map(|_| { ExtensionType::PskExchangeModes }),
+        byte_parser(0).and(byte_parser(0x33)).map(|_| { ExtensionType::KeyShare }),
         byte_parser(0xff).and(byte_parser(1)).map(|_| { ExtensionType::RenegotiationInfo }),
     ])
 }
