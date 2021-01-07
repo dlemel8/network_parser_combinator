@@ -26,13 +26,13 @@ fn tls_parser_client_start_of_handshake() -> Result<(), Box<dyn Error>> {
                 2,
                 1,
                 vec![
-                    tls::Extension { type_: tls::ExtensionType::ServerName },
-                    tls::Extension { type_: tls::ExtensionType::EcPointFormats },
-                    tls::Extension { type_: tls::ExtensionType::SupportedGroups },
-                    tls::Extension { type_: tls::ExtensionType::SignatureAlgorithms },
-                    tls::Extension { type_: tls::ExtensionType::EncryptThenMac },
-                    tls::Extension { type_: tls::ExtensionType::ExtendedMasterSecret },
-                ]
+                    tls::Extension::ServerName,
+                    tls::Extension::EcPointFormats,
+                    tls::Extension::SupportedGroups,
+                    tls::Extension::SignatureAlgorithms,
+                    tls::Extension::EncryptThenMac,
+                    tls::Extension::ExtendedMasterSecret,
+                ],
             )),
         }
     ], records.parsed);
@@ -52,26 +52,26 @@ fn tls_parser_server_start_of_handshake() -> Result<(), Box<dyn Error>> {
             data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHello(
                 "1.2".to_string(),
                 vec![
-                    tls::Extension { type_: tls::ExtensionType::RenegotiationInfo },
-                    tls::Extension { type_: tls::ExtensionType::EcPointFormats },
-                    tls::Extension { type_: tls::ExtensionType::ExtendedMasterSecret }
+                    tls::Extension::RenegotiationInfo,
+                    tls::Extension::EcPointFormats,
+                    tls::Extension::ExtendedMasterSecret,
                 ],
-            ))
+            )),
         },
         tls::Record {
             content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::Certificate)
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::Certificate),
         },
         tls::Record {
             content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerKeyExchange)
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerKeyExchange),
         },
         tls::Record {
             content_type: tls::ContentType::Handshake,
             version: "1.2".to_string(),
-            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHelloDone) ,
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHelloDone),
         }
     ], records.parsed);
     Ok(())
