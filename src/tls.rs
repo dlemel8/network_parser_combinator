@@ -23,12 +23,21 @@ fn content_type_parser<'a>() -> impl Parser<'a, ContentType> {
 type Version = String;
 
 fn version_parser<'a>() -> impl Parser<'a, Version> {
-    byte_parser(3).then(|_| {
-        one_of(vec![
-            byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
-        ])
-            .map(|x| { format!("1.{}", x - 1) })
-    })
+    one_of(vec![
+        byte_parser(3).then(|_| {
+            one_of(vec![
+                byte_parser(1), byte_parser(2), byte_parser(3), byte_parser(4),
+            ])
+                .map(|x| { format!("1.{}", x - 1) })
+        }),
+        byte_parser(0x7f).then(|_| {
+            one_of(vec![
+                byte_parser(0x17), byte_parser(0x18), byte_parser(0x19),
+                byte_parser(0x1a), byte_parser(0x1b), byte_parser(0x1c),
+            ])
+                .map(|x| { format!("1.3 (draft {})", x) })
+        }),
+    ])
 }
 
 #[derive(Debug, PartialEq)]
@@ -61,49 +70,58 @@ pub enum Extension {
     CachedInfo,
     RecordSizeLimit,
     SessionTicketTLS,
-    SupportedVersions,
+    SupportedVersions(Vec<Version>),
     PskExchangeModes,
     KeyShare,
     RenegotiationInfo,
 }
 
-fn extension_parser<'a>() -> impl Parser<'a, Extension> {
+fn extension_parser<'a>(client_hello: bool) -> impl Parser<'a, Extension> {
     one_of(vec![
-        byte_parser(0).and(byte_parser(0)).map(|_| { Extension::ServerName }),
-        byte_parser(0).and(byte_parser(1)).map(|_| { Extension::MaxFragmentLength }),
-        byte_parser(0).and(byte_parser(2)).map(|_| { Extension::ClientCertificate }),
-        byte_parser(0).and(byte_parser(3)).map(|_| { Extension::TrustedCaKeys }),
-        byte_parser(0).and(byte_parser(4)).map(|_| { Extension::TruncatedHMac }),
-        byte_parser(0).and(byte_parser(5)).map(|_| { Extension::StatusRequest }),
-        byte_parser(0).and(byte_parser(6)).map(|_| { Extension::UserMapping }),
-        byte_parser(0).and(byte_parser(7)).map(|_| { Extension::ClientAuthz }),
-        byte_parser(0).and(byte_parser(8)).map(|_| { Extension::ServerAuthz }),
-        byte_parser(0).and(byte_parser(9)).map(|_| { Extension::CertType }),
-        byte_parser(0).and(byte_parser(0xa)).map(|_| { Extension::SupportedGroups }),
-        byte_parser(0).and(byte_parser(0xb)).map(|_| { Extension::EcPointFormats }),
-        byte_parser(0).and(byte_parser(0xc)).map(|_| { Extension::Srp }),
-        byte_parser(0).and(byte_parser(0xd)).map(|_| { Extension::SignatureAlgorithms }),
-        byte_parser(0).and(byte_parser(0xe)).map(|_| { Extension::UseSrtp }),
-        byte_parser(0).and(byte_parser(0xf)).map(|_| { Extension::Heartbeat }),
-        byte_parser(0).and(byte_parser(0x10)).map(|_| { Extension::ApplicationLayerProtocolNegotiation }),
-        byte_parser(0).and(byte_parser(0x11)).map(|_| { Extension::StatusRequestV2 }),
-        byte_parser(0).and(byte_parser(0x12)).map(|_| { Extension::SignedCertificateTimestamp }),
-        byte_parser(0).and(byte_parser(0x13)).map(|_| { Extension::ClientCertificateType }),
-        byte_parser(0).and(byte_parser(0x14)).map(|_| { Extension::ServerCertificateType }),
-        byte_parser(0).and(byte_parser(0x15)).map(|_| { Extension::Padding }),
-        byte_parser(0).and(byte_parser(0x16)).map(|_| { Extension::EncryptThenMac }),
-        byte_parser(0).and(byte_parser(0x17)).map(|_| { Extension::ExtendedMasterSecret }),
-        byte_parser(0).and(byte_parser(0x18)).map(|_| { Extension::TokenBinding }),
-        byte_parser(0).and(byte_parser(0x19)).map(|_| { Extension::CachedInfo }),
-        byte_parser(0).and(byte_parser(0x1c)).map(|_| { Extension::RecordSizeLimit }),
-        byte_parser(0).and(byte_parser(0x23)).map(|_| { Extension::SessionTicketTLS }),
-        byte_parser(0).and(byte_parser(0x2b)).map(|_| { Extension::SupportedVersions }),
-        byte_parser(0).and(byte_parser(0x2d)).map(|_| { Extension::PskExchangeModes }),
-        byte_parser(0).and(byte_parser(0x33)).map(|_| { Extension::KeyShare }),
-        byte_parser(0xff).and(byte_parser(1)).map(|_| { Extension::RenegotiationInfo }),
+        byte_parser(0).and(byte_parser(0x2b))
+            .and(size_header_parser(2, false))
+            .skip(1 * client_hello as usize)
+            .then(move |((_, _), size)| {
+                version_parser().repeat(..=size)
+                    .map(move |versions| Extension::SupportedVersions(versions))
+                    .skip_to(size - client_hello as usize)}
+            ),
+        one_of(vec![
+            byte_parser(0).and(byte_parser(0)).map(|_| { Extension::ServerName }),
+            byte_parser(0).and(byte_parser(1)).map(|_| { Extension::MaxFragmentLength }),
+            byte_parser(0).and(byte_parser(2)).map(|_| { Extension::ClientCertificate }),
+            byte_parser(0).and(byte_parser(3)).map(|_| { Extension::TrustedCaKeys }),
+            byte_parser(0).and(byte_parser(4)).map(|_| { Extension::TruncatedHMac }),
+            byte_parser(0).and(byte_parser(5)).map(|_| { Extension::StatusRequest }),
+            byte_parser(0).and(byte_parser(6)).map(|_| { Extension::UserMapping }),
+            byte_parser(0).and(byte_parser(7)).map(|_| { Extension::ClientAuthz }),
+            byte_parser(0).and(byte_parser(8)).map(|_| { Extension::ServerAuthz }),
+            byte_parser(0).and(byte_parser(9)).map(|_| { Extension::CertType }),
+            byte_parser(0).and(byte_parser(0xa)).map(|_| { Extension::SupportedGroups }),
+            byte_parser(0).and(byte_parser(0xb)).map(|_| { Extension::EcPointFormats }),
+            byte_parser(0).and(byte_parser(0xc)).map(|_| { Extension::Srp }),
+            byte_parser(0).and(byte_parser(0xd)).map(|_| { Extension::SignatureAlgorithms }),
+            byte_parser(0).and(byte_parser(0xe)).map(|_| { Extension::UseSrtp }),
+            byte_parser(0).and(byte_parser(0xf)).map(|_| { Extension::Heartbeat }),
+            byte_parser(0).and(byte_parser(0x10)).map(|_| { Extension::ApplicationLayerProtocolNegotiation }),
+            byte_parser(0).and(byte_parser(0x11)).map(|_| { Extension::StatusRequestV2 }),
+            byte_parser(0).and(byte_parser(0x12)).map(|_| { Extension::SignedCertificateTimestamp }),
+            byte_parser(0).and(byte_parser(0x13)).map(|_| { Extension::ClientCertificateType }),
+            byte_parser(0).and(byte_parser(0x14)).map(|_| { Extension::ServerCertificateType }),
+            byte_parser(0).and(byte_parser(0x15)).map(|_| { Extension::Padding }),
+            byte_parser(0).and(byte_parser(0x16)).map(|_| { Extension::EncryptThenMac }),
+            byte_parser(0).and(byte_parser(0x17)).map(|_| { Extension::ExtendedMasterSecret }),
+            byte_parser(0).and(byte_parser(0x18)).map(|_| { Extension::TokenBinding }),
+            byte_parser(0).and(byte_parser(0x19)).map(|_| { Extension::CachedInfo }),
+            byte_parser(0).and(byte_parser(0x1c)).map(|_| { Extension::RecordSizeLimit }),
+            byte_parser(0).and(byte_parser(0x23)).map(|_| { Extension::SessionTicketTLS }),
+            byte_parser(0).and(byte_parser(0x2d)).map(|_| { Extension::PskExchangeModes }),
+            byte_parser(0).and(byte_parser(0x33)).map(|_| { Extension::KeyShare }),
+            byte_parser(0xff).and(byte_parser(1)).map(|_| { Extension::RenegotiationInfo }),
+        ])
+            .and(size_header_parser(2, true))
+            .map(|(extension, _)| extension),
     ])
-        .and(size_header_parser(2, true))
-        .map(|(extension, _)| { extension })
 }
 
 type CipherSuitesCount = usize;
@@ -128,7 +146,7 @@ fn client_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
         .and(size_header_parser(1, true)) // compression methods
         .and(size_header_parser(2, false))// extensions
         .then(|((((version, _), size1), size2), size3)|
-            extension_parser().repeat(..=size3)
+            extension_parser(true).repeat(..=size3)
                 .map(move |extensions| {
                     HandshakeProtocol::ClientHello(version.clone(), size1 / 2, size2, extensions)
                 })
@@ -143,7 +161,7 @@ fn server_hello_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
         .skip(3)// cipher suite + compression method
         .and(size_header_parser(2, false))// extensions
         .then(|((version, _), size)|
-            extension_parser().repeat(..=size)
+            extension_parser(false).repeat(..=size)
                 .map(move |extensions| { HandshakeProtocol::ServerHello(version.clone(), extensions) })
                 .skip_to(size)
         )
@@ -265,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn version_parser_on_input_with_unknown_value_return_version() -> Result<(), Box<dyn Error>> {
+    fn version_parser_on_input_with_unknown_value_return_error() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [1, 2, 7];
         let result = tls::version_parser().parse(&input);
         assert!(result.is_err());
@@ -273,7 +291,7 @@ mod tests {
     }
 
     #[test]
-    fn version_parser_on_input_with_known_value_return_it() -> Result<(), Box<dyn Error>> {
+    fn version_parser_on_input_with_known_value_return_version() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [3, 3, 7];
         let result = tls::version_parser().parse(&input)?;
         assert_eq!("1.2", result.parsed);
@@ -282,19 +300,46 @@ mod tests {
     }
 
     #[test]
+    fn version_parser_on_input_with_known_draft_value_return_version() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 3] = [0x7f, 0x1c, 7];
+        let result = tls::version_parser().parse(&input)?;
+        assert_eq!("1.3 (draft 28)", result.parsed);
+        assert_eq!([7], result.remaining);
+        Ok(())
+    }
+
+    #[test]
     fn extension_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {
         let input: [u8; 3] = [0, 8, 3];
-        let result = tls::extension_parser().parse(&input);
+        let result = tls::extension_parser(false).parse(&input);
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
-    fn extension_parser_on_input_with_known_value_return_content_type() -> Result<(), Box<dyn Error>> {
+    fn extension_parser_on_input_with_known_value_return_extension() -> Result<(), Box<dyn Error>> {
         let input: [u8; 7] = [0, 8, 0, 1, 1, 2, 3];
-        let result = tls::extension_parser().parse(&input)?;
+        let result = tls::extension_parser(false).parse(&input)?;
         assert_eq!(tls::Extension::ServerAuthz, result.parsed);
         assert_eq!([2, 3], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn extension_parser_on_client_supported_versions_input_return_extension() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 8] = [0, 0x2b, 0, 3, 2, 3, 4, 5];
+        let result = tls::extension_parser(true).parse(&input)?;
+        assert_eq!(tls::Extension::SupportedVersions(vec!["1.3".to_string()]), result.parsed);
+        assert_eq!([5], result.remaining);
+        Ok(())
+    }
+
+    #[test]
+    fn extension_parser_on_server_supported_versions_input_return_extension() -> Result<(), Box<dyn Error>> {
+        let input: [u8; 7] = [0, 0x2b, 0, 2, 3, 4, 5];
+        let result = tls::extension_parser(false).parse(&input)?;
+        assert_eq!(tls::Extension::SupportedVersions(vec!["1.3".to_string()]), result.parsed);
+        assert_eq!([5], result.remaining);
         Ok(())
     }
 
