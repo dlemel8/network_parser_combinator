@@ -10,7 +10,7 @@ pub enum ContentType {
     Heartbeat,
 }
 
-fn content_type_parser<'a>() -> impl Parser<'a, ContentType> {
+pub fn content_type_parser<'a>() -> impl Parser<'a, ContentType> {
     one_of(vec![
         byte_parser(20).map(|_| { ContentType::ChangeCipherSpec }),
         byte_parser(21).map(|_| { ContentType::Alert }),
@@ -84,8 +84,8 @@ fn extension_parser<'a>(client_hello: bool) -> impl Parser<'a, Extension> {
             .then(move |((_, _), size)| {
                 version_parser().repeat(..=size)
                     .map(move |versions| Extension::SupportedVersions(versions))
-                    .skip_to(size - client_hello as usize)}
-            ),
+                    .skip_to(size - client_hello as usize)
+            }),
         one_of(vec![
             byte_parser(0).and(byte_parser(0)).map(|_| { Extension::ServerName }),
             byte_parser(0).and(byte_parser(1)).map(|_| { Extension::MaxFragmentLength }),
@@ -206,7 +206,7 @@ pub enum Data<'a> {
     Encrypted(&'a [u8]),
 }
 
-fn data_parser<'a>(content_type: ContentType) -> impl Parser<'a, Data<'a>> {
+pub(crate) fn data_parser<'a>(content_type: ContentType) -> impl Parser<'a, Data<'a>> {
     move |input: &'a [u8]| {
         match content_type {
             ContentType::ChangeCipherSpec =>
@@ -228,7 +228,7 @@ fn data_parser<'a>(content_type: ContentType) -> impl Parser<'a, Data<'a>> {
 #[derive(Debug, PartialEq)]
 pub struct Record<'a> {
     pub content_type: ContentType,
-    pub version: String,
+    pub version: Version,
     pub data: Data<'a>,
 }
 
