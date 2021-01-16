@@ -26,6 +26,11 @@ fn dtls_handshake_parser<'a>() -> impl Parser<'a, tls::HandshakeProtocol<'a>> {
             size_header_parser(header_size_in_bytes, consume)
                 .skip(8),  // message sequence + fragment offset + fragment size
         version_parser,
+        || {
+            size_header_parser(1, true) // session id
+                .and(size_header_parser(1, true)) // cookie
+                .map(|_| ())
+        },
     )
 }
 
