@@ -1,5 +1,5 @@
-use crate::parser::{Parser, one_of};
 use crate::general::{byte_parser, size_header_parser};
+use crate::parser::{one_of, Parser};
 use crate::tls;
 
 type Version = String;
@@ -20,13 +20,22 @@ pub struct Record<'a> {
     pub data: tls::Data<'a>,
 }
 
+fn dtls_handshake_parser<'a>() -> impl Parser<'a, tls::HandshakeProtocol<'a>> {
+    tls::handshake_parser(
+        |header_size_in_bytes: usize, consume: bool|
+            size_header_parser(header_size_in_bytes, consume)
+                .skip(8),  // message sequence + fragment offset + fragment size
+        version_parser,
+    )
+}
+
 pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
     tls::content_type_parser()
         .and(version_parser())
         .skip(8)  // epoch + sequence number
         .and(size_header_parser(2, false))
         .then(|((content_type, version), size)| {
-            tls::data_parser(content_type)
+            tls::data_parser(content_type, dtls_handshake_parser)
                 .map(move |data| { Record { content_type, version: version.clone(), data } })
                 .skip_to(size)
         })
@@ -36,8 +45,8 @@ pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
 mod tests {
     use std::error::Error;
 
-    use crate::parser::Parser;
     use crate::{dtls, tls};
+    use crate::parser::Parser;
 
     #[test]
     fn version_parser_on_not_enough_input_return_err() -> Result<(), Box<dyn Error>> {

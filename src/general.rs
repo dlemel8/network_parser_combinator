@@ -9,7 +9,7 @@ pub fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
     }
 }
 
-pub fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> impl Parser<'a, usize> {
+pub(crate) fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> impl Parser<'a, usize> {
     move |input: &'a [u8]| {
         if input.len() < header_size_in_bytes {
             return Err(format!("header too small {}", input.len()));

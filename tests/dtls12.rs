@@ -4,12 +4,35 @@ use network_parser_combinator::parser::Parser;
 use network_parser_combinator::{dtls, tls};
 
 // DTLS 1.2 session #1 payloads
+static SERVER_HELLO_PAYLOAD: &str = "16fefd000000000000000100590200004d000100000000004dfefd588e5f36a2c95dca786113f723f3701be3cc12c043ea812558987da545ed726a20a17a78670883e4f524a2701f2f87c0aad7f1f425099822d0bd7416b5261397ddc0a8000005ff01000100";
 static SERVER_HELLO_DONE_PAYLOAD: &str = "16fefd0000000000000002000c0e0000000002000000000000";
 static CLIENT_END_OF_HANDSHAKE_PAYLOAD: &str = "16fefd0000000000000002001210000006000200000000000600047465737414fefd000000000000000300010116fefd0001000000000000002800010000000000006540080120371f2ea6aa2bc268161620c792f47021205e56a0b64f34ee4b27b0";
 static SERVER_CHANGE_CIPHER_SPEC_PAYLOAD: &str = "14fefd0000000000000003000101";
 static SERVER_ENCRYPTED_HANDSHAKE_PAYLOAD: &str = "16fefd0001000000000000002800010000000000004dd9e249e86b60a5811b9f002123eb0ec23b260587d25b07fae6691f2a99e28d";
 static ENCRYPTED_APPLICATION_DATA: &str = "17fefd000100000000000100300001000000000001c2315fbaace18d75d6220ca5fb6d978216d736c454f287b518743b2b32013f33ce62ab214c2a0b9c";
 static ENCRYPTED_ALERT: &str = "15fefd000100000000000300120001000000000003d2aa4f0a3362fee37b72";
+
+#[test]
+fn dtls_parser_server_done() -> Result<(), Box<dyn Error>> {
+    let payload = hex::decode(SERVER_HELLO_PAYLOAD).expect("failed to decode payload");
+    let parser = dtls::record_parser().repeat(1..2);
+    let records = parser.parse(payload.as_slice())?;
+    assert!(records.remaining.is_empty());
+    assert_eq!(vec![
+        dtls::Record {
+            content_type: tls::ContentType::Handshake,
+            version: "1.2".to_string(),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::ServerHello(
+                "1.2".to_string(),
+                vec![
+                    tls::Extension::RenegotiationInfo,
+                ],
+            )),
+        },
+    ], records.parsed);
+    Ok(())
+}
+
 
 #[test]
 fn dtls_parser_server_hello_done() -> Result<(), Box<dyn Error>> {
