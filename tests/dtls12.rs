@@ -5,6 +5,7 @@ use network_parser_combinator::{dtls, tls};
 
 // DTLS 1.2 session payloads
 static CLIENT_HELLO_WITHOUT_COOKIE_PAYLOAD: &str = "16feff000000000000000000460100003a000000000000003afefd588e5f9dc778cef22405f42f9bea25928bd0312ce14d642d034d24f4fab672fc00000002c0a80100000e000500050100000000ff01000100";
+static SERVER_HELLO_VERIFY_REQUEST_PAYLOAD: &str = "16feff0000000000000000001f030000130000000000000013feff10113a3f65af4602091fc0afee6e919ba2";
 static CLIENT_HELLO_WITH_COOKIE_PAYLOAD: &str = "16feff000000000000000100560100004a000100000000004afefd588e5f9dc778cef22405f42f9bea25928bd0312ce14d642d034d24f4fab672fc0010113a3f65af4602091fc0afee6e919ba20002c0a80100000e000500050100000000ff01000100";
 static SERVER_HELLO_PAYLOAD: &str = "16fefd000000000000000100590200004d000100000000004dfefd588e5f36a2c95dca786113f723f3701be3cc12c043ea812558987da545ed726a20a17a78670883e4f524a2701f2f87c0aad7f1f425099822d0bd7416b5261397ddc0a8000005ff01000100";
 static SERVER_HELLO_DONE_PAYLOAD: &str = "16fefd0000000000000002000c0e0000000002000000000000";
@@ -33,6 +34,22 @@ fn dtls_parser_client_hello_without_cookie() -> Result<(), Box<dyn Error>> {
                     tls::Extension::RenegotiationInfo,
                 ],
             )),
+        },
+    ], records.parsed);
+    Ok(())
+}
+
+#[test]
+fn dtls_parser_server_hello_verify_request() -> Result<(), Box<dyn Error>> {
+    let payload = hex::decode(SERVER_HELLO_VERIFY_REQUEST_PAYLOAD).expect("failed to decode payload");
+    let parser = dtls::record_parser().repeat(1..2);
+    let records = parser.parse(payload.as_slice())?;
+    assert!(records.remaining.is_empty());
+    assert_eq!(vec![
+        dtls::Record {
+            content_type: tls::ContentType::Handshake,
+            version: "1.0".to_string(),
+            data: tls::Data::HandshakeProtocol(tls::HandshakeProtocol::HelloVerifyRequest),
         },
     ], records.parsed);
     Ok(())

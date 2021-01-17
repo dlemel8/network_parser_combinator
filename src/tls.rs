@@ -130,6 +130,7 @@ type CompressionMethodsCount = usize;
 #[derive(Debug, PartialEq)]
 pub enum HandshakeProtocol<'a> {
     ClientHello(Version, CipherSuitesCount, CompressionMethodsCount, Vec<Extension>),
+    HelloVerifyRequest,
     ServerHello(Version, Vec<Extension>),
     Certificate,
     ServerKeyExchange,
@@ -237,13 +238,13 @@ pub struct Record<'a> {
     pub data: Data<'a>,
 }
 
-fn tls_client_context_parser<'a>() -> impl Parser<'a, ()> {
+fn client_context_parser<'a>() -> impl Parser<'a, ()> {
     size_header_parser(1, true) // session id
         .map(|_|())
 }
 
 fn tls_handshake_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
-    handshake_parser(size_header_parser, version_parser, tls_client_context_parser)
+    handshake_parser(size_header_parser, version_parser, client_context_parser)
 }
 
 pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
@@ -263,7 +264,7 @@ mod tests {
 
     use crate::parser::Parser;
     use crate::tls;
-    use crate::tls::{tls_handshake_parser, tls_client_context_parser};
+    use crate::tls::{tls_handshake_parser, client_context_parser};
 
     #[test]
     fn content_type_parser_on_empty_input_return_err() -> Result<(), Box<dyn Error>> {
@@ -366,7 +367,7 @@ mod tests {
         input[39] = 3;
         let result = tls::client_hello_parser(
             tls::version_parser,
-            tls_client_context_parser
+            client_context_parser
         ).parse(&input);
         assert!(result.is_err());
         Ok(())
@@ -380,7 +381,7 @@ mod tests {
         let empty: Vec<tls::Extension> = vec![];
         let result = tls::client_hello_parser(
             tls::version_parser,
-            tls_client_context_parser
+            client_context_parser
         ).parse(&input)?;
         assert_eq!(tls::HandshakeProtocol::ClientHello("1.2".to_string(), 0, 0, empty), result.parsed);
         assert!(result.remaining.is_empty());
@@ -397,7 +398,7 @@ mod tests {
         input[43] = 4;
         let result = tls::client_hello_parser(
             tls::version_parser,
-            tls_client_context_parser
+            client_context_parser
         ).parse(&input)?;
         assert_eq!(tls::HandshakeProtocol::ClientHello(
             "1.2".to_string(), 1, 2,

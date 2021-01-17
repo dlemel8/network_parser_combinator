@@ -20,18 +20,32 @@ pub struct Record<'a> {
     pub data: tls::Data<'a>,
 }
 
+fn handshake_size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> impl Parser<'a, usize> {
+    size_header_parser(header_size_in_bytes, consume)
+        .skip(8)  // message sequence + fragment offset + fragment size
+}
+
+fn client_context_parser<'a>() -> impl Parser<'a, ()> {
+    size_header_parser(1, true) // session id
+        .and(size_header_parser(1, true)) // cookie
+        .map(|_| ())
+}
+
+fn hello_verify_request_parser<'a>() -> impl Parser<'a, tls::HandshakeProtocol<'a>> {
+    byte_parser(3)
+        .and(handshake_size_header_parser(3, true))
+        .map(|_| { tls::HandshakeProtocol::HelloVerifyRequest })
+}
+
 fn dtls_handshake_parser<'a>() -> impl Parser<'a, tls::HandshakeProtocol<'a>> {
-    tls::handshake_parser(
-        |header_size_in_bytes: usize, consume: bool|
-            size_header_parser(header_size_in_bytes, consume)
-                .skip(8),  // message sequence + fragment offset + fragment size
-        version_parser,
-        || {
-            size_header_parser(1, true) // session id
-                .and(size_header_parser(1, true)) // cookie
-                .map(|_| ())
-        },
-    )
+    move |input: &'a [u8]| {
+        tls::handshake_parser(handshake_size_header_parser, version_parser, client_context_parser)
+            .parse(&input)
+            .or_else(|_| {
+                hello_verify_request_parser()
+                    .parse(&input)
+            })
+    }
 }
 
 pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
