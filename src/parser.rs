@@ -52,7 +52,7 @@ impl<'a, T> Parser<'a, T> for BoxedParser<'a, T> {
     }
 }
 
-pub fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser<'a, T> {
+pub(crate) fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser<'a, T> {
     move |input: &'a [u8]| {
         let internal_input = input;
         for option in options.iter() {

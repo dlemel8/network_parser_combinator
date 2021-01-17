@@ -48,7 +48,7 @@ fn dtls_handshake_parser<'a>() -> impl Parser<'a, tls::HandshakeProtocol<'a>> {
     }
 }
 
-pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
+pub(crate) fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
     tls::content_type_parser()
         .and(version_parser())
         .skip(8)  // epoch + sequence number

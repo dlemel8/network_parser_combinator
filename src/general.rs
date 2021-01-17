@@ -1,6 +1,6 @@
 use crate::parser::{Parser, ParserResult};
 
-pub fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
+pub(crate) fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
     move |input: &'a [u8]| {
         if input.is_empty() || input[0] != b {
             return Err(format!("expected {}, got {:?}", b, input));

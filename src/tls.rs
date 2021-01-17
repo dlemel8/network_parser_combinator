@@ -247,7 +247,7 @@ fn tls_handshake_parser<'a>() -> impl Parser<'a, HandshakeProtocol<'a>> {
     handshake_parser(size_header_parser, version_parser, client_context_parser)
 }
 
-pub fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
+pub(crate) fn record_parser<'a>() -> impl Parser<'a, Record<'a>> {
     content_type_parser()
         .and(version_parser())
         .and(size_header_parser(2, false))
