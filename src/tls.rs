@@ -308,7 +308,7 @@ where
             byte_parser(1).map(|_| Data::ChangeCipherSpec).parse(&input)
         }
         ContentType::Handshake => handshake_parser()
-            .map(|handshake| Data::HandshakeProtocol(handshake))
+            .map(Data::HandshakeProtocol)
             .parse(&input)
             .or_else(|_| {
                 Ok(ParserResult {
