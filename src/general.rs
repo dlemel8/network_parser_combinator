@@ -5,11 +5,17 @@ pub(crate) fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
         if input.is_empty() || input[0] != b {
             return Err(format!("expected {}, got {:?}", b, input));
         }
-        Ok(ParserResult { parsed: b, remaining: &input[1..] })
+        Ok(ParserResult {
+            parsed: b,
+            remaining: &input[1..],
+        })
     }
 }
 
-pub(crate) fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool) -> impl Parser<'a, usize> {
+pub(crate) fn size_header_parser<'a>(
+    header_size_in_bytes: usize,
+    consume: bool,
+) -> impl Parser<'a, usize> {
     move |input: &'a [u8]| {
         if input.len() < header_size_in_bytes {
             return Err(format!("header too small {}", input.len()));
@@ -19,7 +25,12 @@ pub(crate) fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool)
             1 => input[0] as usize,
             2 => u16::from_be_bytes([input[0], input[1]]) as usize,
             3 => u32::from_be_bytes([0, input[0], input[1], input[2]]) as usize,
-            _ => return Err(format!("header size {} is not supported", header_size_in_bytes))
+            _ => {
+                return Err(format!(
+                    "header size {} is not supported",
+                    header_size_in_bytes
+                ))
+            }
         };
 
         let end_offset = size + header_size_in_bytes;
@@ -33,7 +44,10 @@ pub(crate) fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool)
             &input[header_size_in_bytes..]
         };
 
-        Ok(ParserResult { parsed: size, remaining: new_input })
+        Ok(ParserResult {
+            parsed: size,
+            remaining: new_input,
+        })
     }
 }
 
@@ -41,9 +55,8 @@ pub(crate) fn size_header_parser<'a>(header_size_in_bytes: usize, consume: bool)
 mod tests {
     use std::error::Error;
 
-    use crate::general::{size_header_parser, byte_parser};
+    use crate::general::{byte_parser, size_header_parser};
     use crate::parser::Parser;
-
 
     #[test]
     fn byte_parser_failure() -> Result<(), Box<dyn Error>> {
@@ -86,7 +99,8 @@ mod tests {
     }
 
     #[test]
-    fn size_header_parser_on_enough_input_and_not_consume_return_size() -> Result<(), Box<dyn Error>> {
+    fn size_header_parser_on_enough_input_and_not_consume_return_size() -> Result<(), Box<dyn Error>>
+    {
         let input: [u8; 6] = [0, 2, 1, 2, 3, 4];
         let result = size_header_parser(2, false).parse(&input)?;
         assert_eq!(2, result.parsed);

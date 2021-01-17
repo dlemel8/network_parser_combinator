@@ -1,9 +1,9 @@
 use crate::parser::{one_of, Parser};
 
+pub mod dtls;
+pub mod general;
 pub mod parser;
 pub mod tls;
-pub mod general;
-pub mod dtls;
 
 #[derive(Debug, PartialEq)]
 pub enum Protocol<'a> {
@@ -14,14 +14,10 @@ pub enum Protocol<'a> {
 
 pub fn parse(input: &[u8]) -> Protocol {
     let parsed = one_of(vec![
-        dtls::record_parser().
-            repeat(1..).
-            map(Protocol::Dtls),
-        tls::record_parser().
-            repeat(1..).
-            map(Protocol::Tls),
+        dtls::record_parser().repeat(1..).map(Protocol::Dtls),
+        tls::record_parser().repeat(1..).map(Protocol::Tls),
     ])
-        .parse(&input);
+    .parse(&input);
 
     match parsed {
         Ok(protocol_result) => protocol_result.parsed,
@@ -33,7 +29,7 @@ pub fn parse(input: &[u8]) -> Protocol {
 mod tests {
     use std::error::Error;
 
-    use crate::{dtls, parse, Protocol, tls};
+    use crate::{dtls, parse, tls, Protocol};
 
     #[test]
     fn parse_on_invalid_input_return_unknown_protocol() -> Result<(), Box<dyn Error>> {
@@ -44,15 +40,15 @@ mod tests {
     }
 
     #[test]
-    fn parse_on_valid_dtls_change_cipher_spec_input_return_dtls_protocol() -> Result<(), Box<dyn Error>> {
+    fn parse_on_valid_dtls_change_cipher_spec_input_return_dtls_protocol(
+    ) -> Result<(), Box<dyn Error>> {
         let input: [u8; 17] = [20, 0xfe, 0xfd, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 5, 14, 2];
         let result = parse(&input);
-        let expected = Protocol::Dtls(vec![
-            dtls::Record {
-                content_type: tls::ContentType::ChangeCipherSpec,
-                version: "1.2".to_string(),
-                data: tls::Data::ChangeCipherSpec,
-            }]);
+        let expected = Protocol::Dtls(vec![dtls::Record {
+            content_type: tls::ContentType::ChangeCipherSpec,
+            version: "1.2".to_string(),
+            data: tls::Data::ChangeCipherSpec,
+        }]);
         assert_eq!(expected, result);
         Ok(())
     }

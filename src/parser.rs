@@ -9,33 +9,66 @@ pub struct ParserResult<'a, T> {
 pub trait Parser<'a, T: 'a> {
     fn parse(&self, input: &'a [u8]) -> Result<ParserResult<'a, T>, String>;
 
-    fn map<U: 'a>(self, f: impl Fn(T) -> U + 'a) -> BoxedParser<'a, U> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(map(self, f)) }
+    fn map<U: 'a>(self, f: impl Fn(T) -> U + 'a) -> BoxedParser<'a, U>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(map(self, f)),
+        }
     }
 
-    fn then<U: 'a, P: Parser<'a, U> + 'a>(self, f: impl Fn(T) -> P + 'a) -> BoxedParser<'a, U> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(then(self, f)) }
+    fn then<U: 'a, P: Parser<'a, U> + 'a>(self, f: impl Fn(T) -> P + 'a) -> BoxedParser<'a, U>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(then(self, f)),
+        }
     }
 
-    fn and<U: 'a>(self, another: impl Parser<'a, U> + 'a) -> BoxedParser<'a, (T, U)> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(and(self, another)) }
+    fn and<U: 'a>(self, another: impl Parser<'a, U> + 'a) -> BoxedParser<'a, (T, U)>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(and(self, another)),
+        }
     }
 
-    fn skip(self, size: usize) -> BoxedParser<'a, T> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(skip(self, size)) }
+    fn skip(self, size: usize) -> BoxedParser<'a, T>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(skip(self, size)),
+        }
     }
 
-    fn skip_to(self, offset: usize) -> BoxedParser<'a, T> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(skip_to(self, offset)) }
+    fn skip_to(self, offset: usize) -> BoxedParser<'a, T>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(skip_to(self, offset)),
+        }
     }
 
-    fn repeat(self, times: impl RangeBounds<usize> + 'a) -> BoxedParser<'a, Vec<T>> where Self: Sized + 'a {
-        BoxedParser { parser: Box::new(repeat(self, times)) }
+    fn repeat(self, times: impl RangeBounds<usize> + 'a) -> BoxedParser<'a, Vec<T>>
+    where
+        Self: Sized + 'a,
+    {
+        BoxedParser {
+            parser: Box::new(repeat(self, times)),
+        }
     }
 }
 
 // allow us to use a closure as parser
-impl<'a, F, T: 'a> Parser<'a, T> for F where F: Fn(&'a [u8]) -> Result<ParserResult<'a, T>, String> {
+impl<'a, F, T: 'a> Parser<'a, T> for F
+where
+    F: Fn(&'a [u8]) -> Result<ParserResult<'a, T>, String>,
+{
     fn parse(&self, input: &'a [u8]) -> Result<ParserResult<'a, T>, String> {
         self(input)
     }
@@ -43,7 +76,7 @@ impl<'a, F, T: 'a> Parser<'a, T> for F where F: Fn(&'a [u8]) -> Result<ParserRes
 
 // allow us to use a combinator functions as part of Parser trait
 pub struct BoxedParser<'a, T> {
-    parser: Box<dyn Parser<'a, T> + 'a>
+    parser: Box<dyn Parser<'a, T> + 'a>,
 }
 
 impl<'a, T> Parser<'a, T> for BoxedParser<'a, T> {
@@ -60,46 +93,84 @@ pub(crate) fn one_of<'a, T: 'a>(options: Vec<impl Parser<'a, T>>) -> impl Parser
             if result.is_ok() {
                 return result;
             }
-        };
+        }
         Err(format!("all {} options failed", options.len()))
     }
 }
 
 fn map<'a, A: 'a, B: 'a>(p: impl Parser<'a, A>, f: impl Fn(A) -> B) -> impl Parser<'a, B> {
     move |input: &'a [u8]| {
-        p.parse(&input).map(|ParserResult { parsed: a, remaining }| {
-            ParserResult { parsed: f(a), remaining }
-        })
+        p.parse(&input).map(
+            |ParserResult {
+                 parsed: a,
+                 remaining,
+             }| {
+                ParserResult {
+                    parsed: f(a),
+                    remaining,
+                }
+            },
+        )
     }
 }
 
-fn then<'a, A: 'a, B: 'a, P: Parser<'a, B>>(p: impl Parser<'a, A>, f: impl Fn(A) -> P) -> impl Parser<'a, B> {
+fn then<'a, A: 'a, B: 'a, P: Parser<'a, B>>(
+    p: impl Parser<'a, A>,
+    f: impl Fn(A) -> P,
+) -> impl Parser<'a, B> {
     move |input: &'a [u8]| {
-        p.parse(&input).and_then(|ParserResult { parsed: a, remaining }| {
-            f(a).parse(remaining)
-        })
+        p.parse(&input).and_then(
+            |ParserResult {
+                 parsed: a,
+                 remaining,
+             }| { f(a).parse(remaining) },
+        )
     }
 }
 
-fn and<'a, A: 'a, B: 'a>(p1: impl Parser<'a, A>, p2: impl Parser<'a, B>) -> impl Parser<'a, (A, B)> {
+fn and<'a, A: 'a, B: 'a>(
+    p1: impl Parser<'a, A>,
+    p2: impl Parser<'a, B>,
+) -> impl Parser<'a, (A, B)> {
     move |input: &'a [u8]| {
-        p1.parse(input).and_then(|ParserResult { parsed: a, remaining: remaining1 }| {
-            p2.parse(remaining1).map(|ParserResult { parsed: b, remaining: remaining2 }| {
-                ParserResult { parsed: (a, b), remaining: remaining2 }
-            })
-        })
+        p1.parse(input).and_then(
+            |ParserResult {
+                 parsed: a,
+                 remaining: remaining1,
+             }| {
+                p2.parse(remaining1).map(
+                    |ParserResult {
+                         parsed: b,
+                         remaining: remaining2,
+                     }| {
+                        ParserResult {
+                            parsed: (a, b),
+                            remaining: remaining2,
+                        }
+                    },
+                )
+            },
+        )
     }
 }
 
 fn skip<'a, T: 'a>(p: impl Parser<'a, T>, size: usize) -> impl Parser<'a, T> {
     move |input: &'a [u8]| {
-        p.parse(&input).and_then(|ParserResult { parsed: a, remaining }| {
-            if remaining.len() < size {
-                return Err(format!("not enough data {}", remaining.len()));
-            }
+        p.parse(&input).and_then(
+            |ParserResult {
+                 parsed: a,
+                 remaining,
+             }| {
+                if remaining.len() < size {
+                    return Err(format!("not enough data {}", remaining.len()));
+                }
 
-            Ok(ParserResult { parsed: a, remaining: &remaining[size..] })
-        })
+                Ok(ParserResult {
+                    parsed: a,
+                    remaining: &remaining[size..],
+                })
+            },
+        )
     }
 }
 
@@ -109,14 +180,22 @@ fn skip_to<'a, T: 'a>(p: impl Parser<'a, T>, offset: usize) -> impl Parser<'a, T
             return Err(format!("not enough data {}", input.len()));
         }
 
-        p.parse(&input[..offset])
-            .map(|ParserResult { parsed: a, remaining: _ }|
-                ParserResult { parsed: a, remaining: &input[offset..] }
-            )
+        p.parse(&input[..offset]).map(
+            |ParserResult {
+                 parsed: a,
+                 remaining: _,
+             }| ParserResult {
+                parsed: a,
+                remaining: &input[offset..],
+            },
+        )
     }
 }
 
-fn repeat<'a, T: 'a>(p: impl Parser<'a, T>, times: impl RangeBounds<usize> + 'a) -> impl Parser<'a, Vec<T>> {
+fn repeat<'a, T: 'a>(
+    p: impl Parser<'a, T>,
+    times: impl RangeBounds<usize> + 'a,
+) -> impl Parser<'a, Vec<T>> {
     move |input: &'a [u8]| {
         let limit = match times.end_bound() {
             Bound::Excluded(&x) => x - 1,
@@ -135,8 +214,13 @@ fn repeat<'a, T: 'a>(p: impl Parser<'a, T>, times: impl RangeBounds<usize> + 'a)
         }
 
         match times.start_bound() {
-            Bound::Included(&x) if x > results.len() => Err(format!("want at least {}, found {}", x, results.len())),
-            _ => Ok(ParserResult { parsed: results, remaining: internal_input })
+            Bound::Included(&x) if x > results.len() => {
+                Err(format!("want at least {}, found {}", x, results.len()))
+            }
+            _ => Ok(ParserResult {
+                parsed: results,
+                remaining: internal_input,
+            }),
         }
     }
 }
@@ -172,11 +256,10 @@ mod tests {
 
     #[test]
     fn and_parser_success_multiple() -> Result<(), Box<dyn Error>> {
-        let result =
-            byte_parser(b'a')
-                .and(byte_parser(b'b'))
-                .and(byte_parser(b'c'))
-                .parse(b"abc")?;
+        let result = byte_parser(b'a')
+            .and(byte_parser(b'b'))
+            .and(byte_parser(b'c'))
+            .parse(b"abc")?;
         assert_eq!(((b'a', b'b'), b'c'), result.parsed);
         assert_eq!(b"", result.remaining);
         Ok(())
@@ -241,7 +324,7 @@ mod tests {
 
     #[test]
     fn map_parser() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'a').map(|x| { x - 32 }).parse(b"abc")?;
+        let result = byte_parser(b'a').map(|x| x - 32).parse(b"abc")?;
         assert_eq!(b'A', result.parsed);
         assert_eq!(b"bc", result.remaining);
         Ok(())
@@ -256,7 +339,9 @@ mod tests {
 
     #[test]
     fn then_parser_success() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'a').then(|_| byte_parser(b'b')).parse(b"abc")?;
+        let result = byte_parser(b'a')
+            .then(|_| byte_parser(b'b'))
+            .parse(b"abc")?;
         assert_eq!(b'b', result.parsed);
         assert_eq!(b"c", result.remaining);
         Ok(())
@@ -270,7 +355,8 @@ mod tests {
     }
 
     #[test]
-    fn skip_to_parser_failed_base_parser_try_to_access_after_offser_input() -> Result<(), Box<dyn Error>> {
+    fn skip_to_parser_failed_base_parser_try_to_access_after_offser_input(
+    ) -> Result<(), Box<dyn Error>> {
         let result = byte_parser(b'a').repeat(2..3).skip_to(1).parse(b"aaa");
         assert!(result.is_err());
         Ok(())
