@@ -109,9 +109,10 @@ fn skip_to<'a, T: 'a>(p: impl Parser<'a, T>, offset: usize) -> impl Parser<'a, T
             return Err(format!("not enough data {}", input.len()));
         }
 
-        p.parse(&input[..offset]).and_then(|ParserResult { parsed: a, remaining: _ }| {
-            Ok(ParserResult { parsed: a, remaining: &input[offset..] })
-        })
+        p.parse(&input[..offset])
+            .map(|ParserResult { parsed: a, remaining: _ }|
+                ParserResult { parsed: a, remaining: &input[offset..] }
+            )
     }
 }
 
@@ -248,14 +249,14 @@ mod tests {
 
     #[test]
     fn then_parser_failed() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'a').then(|_|byte_parser(b'b')).parse(b"aac");
+        let result = byte_parser(b'a').then(|_| byte_parser(b'b')).parse(b"aac");
         assert!(result.is_err());
         Ok(())
     }
 
     #[test]
     fn then_parser_success() -> Result<(), Box<dyn Error>> {
-        let result = byte_parser(b'a').then(|_|byte_parser(b'b')).parse(b"abc")?;
+        let result = byte_parser(b'a').then(|_| byte_parser(b'b')).parse(b"abc")?;
         assert_eq!(b'b', result.parsed);
         assert_eq!(b"c", result.remaining);
         Ok(())

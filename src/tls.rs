@@ -80,10 +80,10 @@ fn extension_parser<'a>(client_hello: bool) -> impl Parser<'a, Extension> {
     one_of(vec![
         byte_parser(0).and(byte_parser(0x2b))
             .and(size_header_parser(2, false))
-            .skip(1 * client_hello as usize)
+            .skip(client_hello as usize)
             .then(move |((_, _), size)| {
                 version_parser().repeat(..=size)
-                    .map(move |versions| Extension::SupportedVersions(versions))
+                    .map(Extension::SupportedVersions)
                     .skip_to(size - client_hello as usize)
             }),
         one_of(vec![

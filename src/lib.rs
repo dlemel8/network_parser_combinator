@@ -16,10 +16,10 @@ pub fn parse(input: &[u8]) -> Protocol {
     let parsed = one_of(vec![
         dtls::record_parser().
             repeat(1..).
-            map(|records| Protocol::Dtls(records)),
+            map(Protocol::Dtls),
         tls::record_parser().
             repeat(1..).
-            map(|records| Protocol::Tls(records)),
+            map(Protocol::Tls),
     ])
         .parse(&input);
 
