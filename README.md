@@ -1,5 +1,5 @@
 # Network Parser Combinator
-This repo contains parser combinator framework and use it to parse some TLS protocol variants.
+This repo contains parser combinator framework and use it to partially parse some TLS protocol variants.
 
 ## Parser Combinators
 A parser is a function that take bytes and return a result.  
