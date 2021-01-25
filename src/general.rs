@@ -64,7 +64,7 @@ pub(crate) fn size_header_parser<'a>(
 mod tests {
     use std::error::Error;
 
-    use crate::general::{byte_parser, size_header_parser, nop_parser};
+    use crate::general::{byte_parser, nop_parser, size_header_parser};
     use crate::parser::Parser;
 
     #[test]
