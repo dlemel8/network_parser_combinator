@@ -1,5 +1,14 @@
 use crate::parser::{Parser, ParserResult};
 
+pub(crate) fn nop_parser<'a>() -> impl Parser<'a, ()> {
+    move |input: &'a [u8]| {
+        Ok(ParserResult {
+            parsed: (),
+            remaining: &input,
+        })
+    }
+}
+
 pub(crate) fn byte_parser<'a>(b: u8) -> impl Parser<'a, u8> {
     move |input: &'a [u8]| {
         if input.is_empty() || input[0] != b {
@@ -55,8 +64,16 @@ pub(crate) fn size_header_parser<'a>(
 mod tests {
     use std::error::Error;
 
-    use crate::general::{byte_parser, size_header_parser};
+    use crate::general::{byte_parser, size_header_parser, nop_parser};
     use crate::parser::Parser;
+
+    #[test]
+    fn nop_parser_success() -> Result<(), Box<dyn Error>> {
+        let result = nop_parser().parse(b"hello")?;
+        assert_eq!((), result.parsed);
+        assert_eq!(b"hello", result.remaining);
+        Ok(())
+    }
 
     #[test]
     fn byte_parser_failure() -> Result<(), Box<dyn Error>> {
