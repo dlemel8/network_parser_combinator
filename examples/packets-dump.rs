@@ -14,6 +14,10 @@ struct Cli {
     /// Path to pcap file to read
     #[structopt(parse(from_os_str))]
     path: std::path::PathBuf,
+
+    /// Number of worker threads to use
+    #[structopt(default_value = "4")]
+    threads: usize,
 }
 
 #[derive(Debug)]
@@ -41,21 +45,25 @@ impl<'a> fmt::Display for ParsedPacket<'a> {
 
 fn main() {
     let args = Cli::from_args();
-    let (packets_sender, packets_receiver) = bounded::<RawPacket>(1);
+    let (packets_sender, packets_receiver) = bounded::<RawPacket>(4 * args.threads);
 
     scope(|scope| {
-        scope.spawn(move |_| loop {
-            let to_parse = match packets_receiver.recv_timeout(Duration::from_secs(1)) {
-                Ok(packet_to_parse) => packet_to_parse,
-                Err(_) => break,
-            };
-            let mut parsed = ParsedPacket {
-                packet: to_parse,
-                protocol: Protocol::Unknown,
-            };
-            parsed.protocol = parse_ethernet_packet(&parsed.packet.bytes);
-            println!("{}", parsed);
-        });
+        let workers: Vec<_> = (0..args.threads)
+            .map(|_| {
+                scope.spawn(|_| loop {
+                    let to_parse = match packets_receiver.recv_timeout(Duration::from_secs(1)) {
+                        Ok(packet_to_parse) => packet_to_parse,
+                        Err(_) => break,
+                    };
+                    let mut parsed = ParsedPacket {
+                        packet: to_parse,
+                        protocol: Protocol::Unknown,
+                    };
+                    parsed.protocol = parse_ethernet_packet(&parsed.packet.bytes);
+                    println!("{}", parsed);
+                })
+            })
+            .collect();
 
         let mut packet_count = 0;
         let mut cap = Capture::from_file(args.path).unwrap();
@@ -67,6 +75,10 @@ fn main() {
                 bytes: packet.data.to_vec(),
             };
             packets_sender.send(to_parse).unwrap();
+        }
+
+        for worker in workers {
+            worker.join().unwrap()
         }
     })
     .unwrap();
