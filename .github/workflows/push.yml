@@ -18,6 +18,6 @@ jobs:
       - name: Rustfmt
         run: cargo fmt --all -- --check
       - name: Run tests
-        run: cargo test
+        run: cargo test --all-targets
       - name: Build
         run: cargo build --verbose --release
