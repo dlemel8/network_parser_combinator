@@ -218,9 +218,55 @@ mod tests {
 
         assert!(buffer.parsed_packets.is_empty());
         assert_eq!(2, buffer.last_printed_count);
+        assert_eq!(0, buffer.max_count_in_heap);
         assert_eq!(
             std::str::from_utf8(stdout.as_slice()).unwrap(),
             "1 0 Unknown\n2 8 Unknown\n"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn print_buffer_add_on_non_empty_buffer_and_packet_complete_missing_count_flush_and_print(
+    ) -> Result<(), Box<dyn Error>> {
+        let packet1 = ParsedPacket {
+            packet: RawPacket {
+                count: 8,
+                timestamp: 15,
+                bytes: vec![],
+            },
+            protocol: Protocol::Unknown,
+        };
+        let packet2 = ParsedPacket {
+            packet: RawPacket {
+                count: 6,
+                timestamp: 9,
+                bytes: vec![],
+            },
+            protocol: Protocol::Unknown,
+        };
+        let packet3 = ParsedPacket {
+            packet: RawPacket {
+                count: 7,
+                timestamp: 11,
+                bytes: vec![],
+            },
+            protocol: Protocol::Unknown,
+        };
+        let mut buffer = ParsedPacketsPrintBuffer::new();
+        buffer.last_printed_count = 5;
+        let mut stdout = Vec::new();
+
+        buffer.add(packet1, &mut stdout);
+        buffer.add(packet2, &mut stdout);
+        buffer.add(packet3, &mut stdout);
+
+        assert!(buffer.parsed_packets.is_empty());
+        assert_eq!(8, buffer.last_printed_count);
+        assert_eq!(0, buffer.max_count_in_heap);
+        assert_eq!(
+            std::str::from_utf8(stdout.as_slice()).unwrap(),
+            "6 9 Unknown\n7 11 Unknown\n8 15 Unknown\n"
         );
         Ok(())
     }
