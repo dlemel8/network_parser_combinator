@@ -20,6 +20,10 @@ struct Cli {
     /// Number of worker threads to use
     #[structopt(default_value = "4")]
     threads: usize,
+
+    /// Channel read timeout in ms
+    #[structopt(default_value = "100")]
+    read_timeout: u64,
 }
 
 #[derive(Debug)]
@@ -97,15 +101,18 @@ impl ParsedPacketsPrintBuffer {
 }
 
 fn main() {
-    let args = Cli::from_args();
+    let args: Cli = Cli::from_args();
     let (packets_sender, packets_receiver) = bounded::<RawPacket>(4 * args.threads);
     let (parsed_sender, parsed_receiver) = bounded::<ParsedPacket>(4 * args.threads);
 
     scope(|scope| {
         let workers: Vec<_> = (0..args.threads)
             .map(|_| {
-                scope.spawn(|_| loop {
-                    let to_parse = match packets_receiver.recv_timeout(Duration::from_secs(1)) {
+                let read_timeout = args.read_timeout.clone();
+                let packets_receiver = packets_receiver.clone();
+                let parsed_sender = parsed_sender.clone();
+                scope.spawn(move |_| loop {
+                    let to_parse = match packets_receiver.recv_timeout(Duration::from_millis(read_timeout)) {
                         Ok(packet_to_parse) => packet_to_parse,
                         Err(_) => break,
                     };
