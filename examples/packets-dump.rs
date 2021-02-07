@@ -1,7 +1,7 @@
 use std::collections::BinaryHeap;
-use std::{fmt, io};
 use std::fmt::Formatter;
 use std::time::Duration;
+use std::{fmt, io};
 
 use crossbeam_channel::bounded;
 use crossbeam_utils::thread::scope;
@@ -157,7 +157,7 @@ mod tests {
         let packet = ParsedPacket {
             count: 7,
             timestamp: 0,
-            protocol_dump:  format!("{:?}", Protocol::Unknown),
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let mut buffer = ParsedPacketsPrintBuffer::new();
         buffer.last_printed_count = 4;
