@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use std::time::Duration;
 use std::{fmt, io};
 
-use crossbeam_channel::bounded;
+use crossbeam_channel::{bounded, select};
 use crossbeam_utils::thread::scope;
 use pcap::Capture;
 use structopt::StructOpt;
@@ -121,6 +121,7 @@ fn main() {
             .collect();
 
         let mut packet_count = 0;
+        let mut buffer = ParsedPacketsPrintBuffer::new();
         let mut cap = Capture::from_file(args.path).unwrap();
         while let Ok(packet) = cap.next() {
             packet_count += 1;
@@ -129,10 +130,15 @@ fn main() {
                 timestamp: packet.header.ts.tv_sec,
                 bytes: packet.data.to_vec(),
             };
-            packets_sender.send(to_parse).unwrap();
+
+            loop {
+                select! {
+                    send(packets_sender, to_parse) -> _ => {break}
+                    recv(parsed_receiver) -> parsed => {buffer.add(parsed.unwrap(), &mut io::stdout())}
+                }
+            }
         }
 
-        let mut buffer = ParsedPacketsPrintBuffer::new();
         while buffer.last_printed_count < packet_count {
             let parsed = parsed_receiver.recv().unwrap();
             buffer.add(parsed, &mut io::stdout());
