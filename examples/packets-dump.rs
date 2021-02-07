@@ -1,5 +1,5 @@
 use std::collections::BinaryHeap;
-use std::fmt;
+use std::{fmt, io};
 use std::fmt::Formatter;
 use std::time::Duration;
 
@@ -8,9 +8,8 @@ use crossbeam_utils::thread::scope;
 use pcap::Capture;
 use structopt::StructOpt;
 
-use network_parser_combinator::{parse_ethernet_packet, Protocol};
+use network_parser_combinator::parse_ethernet_packet;
 use std::cmp::{max, Ordering, Reverse};
-use std::io::Write;
 
 #[derive(StructOpt)]
 struct Cli {
@@ -31,49 +30,50 @@ struct RawPacket {
 }
 
 #[derive(Debug)]
-struct ParsedPacket<'a> {
-    packet: RawPacket,
-    protocol: Protocol<'a>,
+struct ParsedPacket {
+    count: u32,
+    timestamp: i64,
+    protocol_dump: String,
 }
 
-impl<'a> fmt::Display for ParsedPacket<'a> {
+impl fmt::Display for ParsedPacket {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} {} {:?}",
-            self.packet.count, self.packet.timestamp, self.protocol
+            "{} {} {}",
+            self.count, self.timestamp, self.protocol_dump
         )
     }
 }
 
-impl<'a> Ord for ParsedPacket<'a> {
+impl Ord for ParsedPacket {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.packet.count.cmp(&other.packet.count)
+        self.count.cmp(&other.count)
     }
 }
 
-impl<'a> PartialOrd for ParsedPacket<'a> {
+impl PartialOrd for ParsedPacket {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<'a> PartialEq for ParsedPacket<'a> {
+impl PartialEq for ParsedPacket {
     fn eq(&self, other: &Self) -> bool {
-        self.packet.count == other.packet.count
+        self.count == other.count
     }
 }
 
-impl<'a> Eq for ParsedPacket<'a> {}
+impl Eq for ParsedPacket {}
 
-struct ParsedPacketsPrintBuffer<'a> {
-    parsed_packets: BinaryHeap<Reverse<ParsedPacket<'a>>>,
+struct ParsedPacketsPrintBuffer {
+    parsed_packets: BinaryHeap<Reverse<ParsedPacket>>,
     max_count_in_heap: u32,
     last_printed_count: u32,
 }
 
-impl<'a> ParsedPacketsPrintBuffer<'a> {
-    fn new() -> ParsedPacketsPrintBuffer<'a> {
+impl ParsedPacketsPrintBuffer {
+    fn new() -> ParsedPacketsPrintBuffer {
         ParsedPacketsPrintBuffer {
             parsed_packets: BinaryHeap::new(),
             max_count_in_heap: 0,
@@ -81,8 +81,8 @@ impl<'a> ParsedPacketsPrintBuffer<'a> {
         }
     }
 
-    fn add<W: Write>(&mut self, packet: ParsedPacket<'a>, writer: &mut W) {
-        self.max_count_in_heap = max(self.max_count_in_heap, packet.packet.count);
+    fn add<W: io::Write>(&mut self, packet: ParsedPacket, writer: &mut W) {
+        self.max_count_in_heap = max(self.max_count_in_heap, packet.count);
         self.parsed_packets.push(Reverse(packet));
         let heap_size = self.parsed_packets.len() as u32;
 
@@ -99,6 +99,7 @@ impl<'a> ParsedPacketsPrintBuffer<'a> {
 fn main() {
     let args = Cli::from_args();
     let (packets_sender, packets_receiver) = bounded::<RawPacket>(4 * args.threads);
+    let (parsed_sender, parsed_receiver) = bounded::<ParsedPacket>(4 * args.threads);
 
     scope(|scope| {
         let workers: Vec<_> = (0..args.threads)
@@ -108,12 +109,13 @@ fn main() {
                         Ok(packet_to_parse) => packet_to_parse,
                         Err(_) => break,
                     };
-                    let mut parsed = ParsedPacket {
-                        packet: to_parse,
-                        protocol: Protocol::Unknown,
+                    let protocol = parse_ethernet_packet(&to_parse.bytes);
+                    let parsed = ParsedPacket {
+                        count: to_parse.count,
+                        timestamp: to_parse.timestamp,
+                        protocol_dump: format!("{:?}", protocol),
                     };
-                    parsed.protocol = parse_ethernet_packet(&parsed.packet.bytes);
-                    println!("{}", parsed);
+                    parsed_sender.send(parsed).unwrap();
                 })
             })
             .collect();
@@ -130,6 +132,12 @@ fn main() {
             packets_sender.send(to_parse).unwrap();
         }
 
+        let mut buffer = ParsedPacketsPrintBuffer::new();
+        while buffer.last_printed_count < packet_count {
+            let parsed = parsed_receiver.recv().unwrap();
+            buffer.add(parsed, &mut io::stdout());
+        }
+
         for worker in workers {
             worker.join().unwrap()
         }
@@ -139,7 +147,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ParsedPacket, ParsedPacketsPrintBuffer, RawPacket};
+    use crate::{ParsedPacket, ParsedPacketsPrintBuffer};
     use network_parser_combinator::Protocol;
     use std::error::Error;
 
@@ -147,12 +155,9 @@ mod tests {
     fn print_buffer_add_on_packet_with_non_sequential_count_save_in_buffer(
     ) -> Result<(), Box<dyn Error>> {
         let packet = ParsedPacket {
-            packet: RawPacket {
-                count: 7,
-                timestamp: 0,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 7,
+            timestamp: 0,
+            protocol_dump:  format!("{:?}", Protocol::Unknown),
         };
         let mut buffer = ParsedPacketsPrintBuffer::new();
         buffer.last_printed_count = 4;
@@ -170,12 +175,9 @@ mod tests {
     #[test]
     fn print_buffer_add_on_packet_with_sequential_count_print_in() -> Result<(), Box<dyn Error>> {
         let packet = ParsedPacket {
-            packet: RawPacket {
-                count: 1,
-                timestamp: 0,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 1,
+            timestamp: 0,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let mut buffer = ParsedPacketsPrintBuffer::new();
         let mut stdout = Vec::new();
@@ -195,20 +197,14 @@ mod tests {
     fn print_buffer_add_on_non_empty_buffer_and_packet_with_sequential_count_flush_and_print(
     ) -> Result<(), Box<dyn Error>> {
         let packet1 = ParsedPacket {
-            packet: RawPacket {
-                count: 2,
-                timestamp: 8,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 2,
+            timestamp: 8,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let packet2 = ParsedPacket {
-            packet: RawPacket {
-                count: 1,
-                timestamp: 0,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 1,
+            timestamp: 0,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let mut buffer = ParsedPacketsPrintBuffer::new();
         let mut stdout = Vec::new();
@@ -230,28 +226,19 @@ mod tests {
     fn print_buffer_add_on_non_empty_buffer_and_packet_complete_missing_count_flush_and_print(
     ) -> Result<(), Box<dyn Error>> {
         let packet1 = ParsedPacket {
-            packet: RawPacket {
-                count: 8,
-                timestamp: 15,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 8,
+            timestamp: 15,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let packet2 = ParsedPacket {
-            packet: RawPacket {
-                count: 6,
-                timestamp: 9,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 6,
+            timestamp: 9,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let packet3 = ParsedPacket {
-            packet: RawPacket {
-                count: 7,
-                timestamp: 11,
-                bytes: vec![],
-            },
-            protocol: Protocol::Unknown,
+            count: 7,
+            timestamp: 11,
+            protocol_dump: format!("{:?}", Protocol::Unknown),
         };
         let mut buffer = ParsedPacketsPrintBuffer::new();
         buffer.last_printed_count = 5;
