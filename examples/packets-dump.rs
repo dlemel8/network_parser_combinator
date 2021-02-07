@@ -1,3 +1,4 @@
+use std::cmp::{max, Ordering, Reverse};
 use std::collections::BinaryHeap;
 use std::fmt::Formatter;
 use std::time::Duration;
@@ -9,7 +10,6 @@ use pcap::Capture;
 use structopt::StructOpt;
 
 use network_parser_combinator::parse_ethernet_packet;
-use std::cmp::{max, Ordering, Reverse};
 
 #[derive(StructOpt)]
 struct Cli {
@@ -155,14 +155,16 @@ fn main() {
             worker.join().unwrap()
         }
     })
-    .unwrap();
+        .unwrap();
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{ParsedPacket, ParsedPacketsPrintBuffer};
-    use network_parser_combinator::Protocol;
     use std::error::Error;
+
+    use network_parser_combinator::Protocol;
+
+    use crate::{ParsedPacket, ParsedPacketsPrintBuffer};
 
     #[test]
     fn print_buffer_add_on_packet_with_non_sequential_count_save_in_buffer(
