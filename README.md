@@ -16,3 +16,8 @@ Currently, tested protocols are:
 * TLS 1.2
 * TLS 1.3
 * DTLS 1.2
+
+## Examples
+There is a single example of multi-threaded executable that dumps packets of a pcap file.  
+The main thread is sending packets to parse and receiving parsed packets to worker threads via channels.  
+Parsed packets are temporarily stored in a binary heap until they get printed.
