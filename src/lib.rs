@@ -26,16 +26,22 @@ pub fn parse(input: &[u8]) -> Protocol {
     }
 }
 
+const ETHERNET_LAYER_SIZE: usize = 14;
+const IP_LAYER_SIZE: usize = 20;
+const IP_PROTO_OFFSET: usize = 9;
+const TCP_LAYER_SIZE: usize = 32;
+const UDP_LAYER_SIZE: usize = 8;
+
 pub fn parse_ethernet_packet(input: &[u8]) -> Protocol {
     let payload = nop_parser()
-        .skip(14) // ethernet layer
-        .skip(9) // ip layer until ip proto
+        .skip(ETHERNET_LAYER_SIZE)
+        .skip(IP_PROTO_OFFSET)
         .then(|_| {
             one_of(vec![
-                byte_parser(6).map(|_| 32), // tcp layer size
-                byte_parser(17).map(|_| 8), // udp layer size
+                byte_parser(6).map(|_| TCP_LAYER_SIZE),
+                byte_parser(17).map(|_| UDP_LAYER_SIZE),
             ])
-            .skip(10) // rest of ip layer
+            .skip(IP_LAYER_SIZE - IP_PROTO_OFFSET - 1) // rest of ip layer
             .then(|transport_layer_size| nop_parser().skip(transport_layer_size))
         })
         .parse(&input);
